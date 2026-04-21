@@ -1,42 +1,36 @@
-import { printResult } from '../../core/results.js';
+import type { CommandResult } from 'agenttk';
+import { inputFailure, parsePrefixedError, successResult, type MicrocanvasRecord } from '../contracts.js';
 import { renderSurface } from '../../core/surface.js';
 
-export async function runRender(sourcePath?: string): Promise<void> {
+export async function runRender(sourcePath?: string): Promise<CommandResult<MicrocanvasRecord>> {
   if (!sourcePath) {
-    printResult({
-      ok: false,
-      code: 'INVALID_INPUT',
-      message: 'render requires a source file path',
-      surfaceId: null,
-      viewer: { open: false },
-      lock: { held: false },
-      artifacts: {}
-    });
-    return;
+    return inputFailure('render', 'INVALID_INPUT', 'render requires a source file path');
   }
 
   try {
     const rendered = await renderSurface({ sourcePath });
-    printResult({
-      ok: true,
-      code: 'OK',
-      message: 'surface rendered to staging',
-      surfaceId: rendered.manifest.surfaceId,
-      viewer: { open: false },
-      lock: { held: false },
-      artifacts: { primary: rendered.primaryArtifact }
+    return successResult({
+      type: 'render',
+      id: rendered.manifest.surfaceId,
+      verificationStatus: 'not_applicable',
+      record: {
+        message: 'surface rendered to staging',
+        surfaceId: rendered.manifest.surfaceId,
+        viewer: {
+          mode: 'closed',
+          open: false,
+          canVerify: false
+        },
+        lock: {
+          held: false
+        },
+        artifacts: {
+          primary: rendered.primaryArtifact
+        }
+      }
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'render failed';
-    const unsupported = message.startsWith('UNSUPPORTED_CONTENT:');
-    printResult({
-      ok: false,
-      code: unsupported ? 'UNSUPPORTED_CONTENT' : 'INVALID_INPUT',
-      message: message.replace(/^(INVALID_INPUT|UNSUPPORTED_CONTENT):\s*/, ''),
-      surfaceId: null,
-      viewer: { open: false },
-      lock: { held: false },
-      artifacts: {}
-    });
+    const parsed = parsePrefixedError(error);
+    return inputFailure('render', parsed.code ?? 'INVALID_INPUT', parsed.message);
   }
 }

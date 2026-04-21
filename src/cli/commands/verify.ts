@@ -1,61 +1,78 @@
+import type { CommandResult } from 'agenttk';
 import fs from 'node:fs';
 import path from 'node:path';
 import { paths } from '../../core/paths.js';
-import { printResult } from '../../core/results.js';
 import { readState } from '../../core/state.js';
 import type { SurfaceManifest } from '../../core/manifest.js';
-import { getViewerOpenStatus, readViewerRuntimeState } from '../../viewer/state.js';
+import { getViewerState, readViewerRuntimeState } from '../../viewer/state.js';
+import { operationalFailure, successResult, type MicrocanvasRecord } from '../contracts.js';
 
-export function runVerify(): void {
+export function runVerify(): CommandResult<MicrocanvasRecord> {
   const state = readState();
 
   if (!state.activeSurfaceId) {
-    printResult({
-      ok: false,
-      code: 'VERIFY_FAILED',
-      message: 'no active surface to verify',
-      surfaceId: null,
-      viewer: { open: state.viewerOpen },
-      lock: { held: false },
-      artifacts: {}
+    return operationalFailure('verify', 'VERIFY_FAILED', 'no active surface to verify', {
+      classification: 'user_action_required',
+      retryable: false,
+      nextAction: 'verify_state'
     });
-    return;
   }
 
   if (!fs.existsSync(paths.activeManifest)) {
-    printResult({
-      ok: false,
-      code: 'VERIFY_FAILED',
-      message: 'active manifest is missing',
-      surfaceId: state.activeSurfaceId,
-      viewer: { open: state.viewerOpen },
-      lock: { held: false },
-      artifacts: {}
+    return operationalFailure('verify', 'VERIFY_FAILED', 'active manifest is missing', {
+      classification: 'unknown',
+      retryable: false,
+      nextAction: 'verify_state'
     });
-    return;
   }
 
   const manifest = JSON.parse(fs.readFileSync(paths.activeManifest, 'utf8')) as SurfaceManifest;
   const entryPath = path.join(paths.activeDir, manifest.entryPath);
   const entryExists = fs.existsSync(entryPath);
   const viewerState = readViewerRuntimeState();
-  const viewerOpen = getViewerOpenStatus() || state.viewerOpen;
+  const viewer = getViewerState(state);
   const viewerMatchesSurface = viewerState?.activeSurfaceId === manifest.surfaceId;
-  const verified = entryExists && viewerOpen && viewerMatchesSurface;
+  const verified = entryExists && viewer.verificationCapable && viewerMatchesSurface;
 
-  printResult({
-    ok: verified,
-    code: verified ? 'OK' : 'VERIFY_FAILED',
-    message: verified
-      ? 'active surface and viewer state verified'
-      : !entryExists
+  if (!verified) {
+    return operationalFailure(
+      'verify',
+      'VERIFY_FAILED',
+      !entryExists
         ? 'active surface entry is missing'
-        : !viewerOpen
-          ? 'viewer is not confirmed open'
+        : !viewer.verificationCapable
+          ? viewer.mode === 'degraded'
+            ? 'native viewer confirmation is unavailable while the runtime is in degraded display mode'
+            : 'viewer is not confirmed open'
           : 'viewer is open but not yet reporting the active surface',
-    surfaceId: manifest.surfaceId,
-    viewer: { open: viewerOpen },
-    lock: { held: false },
-    artifacts: entryExists ? { primary: entryPath } : {}
+      {
+        classification: 'unknown',
+        retryable: !entryExists ? false : true,
+        nextAction: 'verify_state',
+        verificationStatus: 'verification_failed'
+      }
+    );
+  }
+
+  return successResult({
+    type: 'verify',
+    id: manifest.surfaceId,
+    verificationStatus: 'verified',
+    verified: true,
+    record: {
+      message: 'active surface and viewer state verified',
+      surfaceId: manifest.surfaceId,
+      viewer: {
+        mode: viewer.mode,
+        open: viewer.open,
+        canVerify: true
+      },
+      lock: {
+        held: false
+      },
+      artifacts: {
+        primary: entryPath
+      }
+    }
   });
 }

@@ -1,35 +1,26 @@
+import type { CommandResult } from 'agenttk';
+import { markUnverified } from 'agenttk';
 import { acquireLock, readLock, releaseLock } from '../../core/lock.js';
-import { printResult } from '../../core/results.js';
 import { readState, writeState } from '../../core/state.js';
 import { updateActiveSurface } from '../../core/surface.js';
 import { launchViewer } from '../../viewer/launch.js';
+import {
+  inputFailure,
+  lockFailure,
+  operationalFailure,
+  parsePrefixedError,
+  successResult,
+  type MicrocanvasRecord
+} from '../contracts.js';
 
-export async function runUpdate(sourcePath?: string): Promise<void> {
+export async function runUpdate(sourcePath?: string): Promise<CommandResult<MicrocanvasRecord>> {
   if (!sourcePath) {
-    printResult({
-      ok: false,
-      code: 'INVALID_INPUT',
-      message: 'update requires a source file path',
-      surfaceId: null,
-      viewer: { open: false },
-      lock: { held: false },
-      artifacts: {}
-    });
-    return;
+    return inputFailure('update', 'INVALID_INPUT', 'update requires a source file path');
   }
 
   const blocked = acquireLock('update');
   if (blocked?.held) {
-    printResult({
-      ok: false,
-      code: 'LOCKED_TRY_LATER',
-      message: blocked.reason ?? 'runtime is locked',
-      surfaceId: null,
-      viewer: { open: false },
-      lock: blocked,
-      artifacts: {}
-    });
-    return;
+    return lockFailure('update', blocked.reason);
   }
 
   let releasedEarly = false;
@@ -41,6 +32,7 @@ export async function runUpdate(sourcePath?: string): Promise<void> {
     writeState({
       ...current,
       activeSurfaceId: updated.manifest.surfaceId,
+      viewerMode: viewer.mode,
       viewerOpen: viewer.open,
       updatedAt: new Date().toISOString()
     });
@@ -48,27 +40,45 @@ export async function runUpdate(sourcePath?: string): Promise<void> {
     releaseLock();
     releasedEarly = true;
 
-    printResult({
-      ok: true,
-      code: 'OK',
-      message: 'active surface updated',
-      surfaceId: updated.manifest.surfaceId,
-      viewer,
-      lock: readLock(),
-      artifacts: { primary: updated.primaryArtifact }
+    const result = successResult({
+      type: 'update',
+      id: updated.manifest.surfaceId,
+      verificationStatus: 'not_applicable',
+      record: {
+        message: 'active surface updated',
+        surfaceId: updated.manifest.surfaceId,
+        viewer: {
+          mode: viewer.mode,
+          open: viewer.open,
+          canVerify: viewer.verificationCapable
+        },
+        lock: {
+          held: readLock().held
+        },
+        artifacts: {
+          primary: updated.primaryArtifact
+        }
+      },
+      warnings: viewer.mode === 'degraded'
+        ? ['Opened through degraded external display; native viewer-backed verify and snapshot are unavailable.']
+        : viewer.mode === 'closed'
+          ? ['Surface was updated, but no viewer session could be opened.']
+          : undefined
     });
+
+    return viewer.mode === 'degraded'
+      ? markUnverified(result, { status: 'unverified', nextAction: 'verify_state' })
+      : result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'update failed';
-    const invalidInput = message.startsWith('INVALID_INPUT:');
-    const unsupported = message.startsWith('UNSUPPORTED_CONTENT:');
-    printResult({
-      ok: false,
-      code: unsupported ? 'UNSUPPORTED_CONTENT' : invalidInput ? 'INVALID_INPUT' : 'UPDATE_NOT_SUPPORTED',
-      message: (unsupported || invalidInput) ? message.replace(/^(INVALID_INPUT|UNSUPPORTED_CONTENT):\s*/, '') : message,
-      surfaceId: null,
-      viewer: { open: false },
-      lock: { held: false },
-      artifacts: {}
+    const parsed = parsePrefixedError(error);
+    if (parsed.code === 'INVALID_INPUT' || parsed.code === 'UNSUPPORTED_CONTENT') {
+      return inputFailure('update', parsed.code, parsed.message);
+    }
+
+    return operationalFailure('update', 'UPDATE_NOT_SUPPORTED', parsed.message, {
+      classification: 'user_action_required',
+      retryable: false,
+      nextAction: 'fix_input'
     });
   } finally {
     if (!releasedEarly) {

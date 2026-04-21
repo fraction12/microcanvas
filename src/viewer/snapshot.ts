@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { paths } from '../core/paths.js';
-import { getViewerOpenStatus } from './state.js';
+import { hasNativeViewerCapability } from './state.js';
 
 interface SnapshotRequest {
   type: 'snapshot';
@@ -25,8 +25,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 export async function requestViewerSnapshot(surfaceId: string, timeoutMs = 5000): Promise<string> {
-  if (!getViewerOpenStatus()) {
-    throw new Error('viewer is not confirmed open');
+  if (!hasNativeViewerCapability()) {
+    throw new Error('native viewer-backed snapshot capability is unavailable');
   }
 
   fs.mkdirSync(paths.snapshotsDir, { recursive: true });

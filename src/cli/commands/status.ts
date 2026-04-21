@@ -1,23 +1,41 @@
+import type { CommandResult } from 'agenttk';
 import fs from 'node:fs';
+import path from 'node:path';
 import { readLock } from '../../core/lock.js';
 import { paths } from '../../core/paths.js';
-import { printResult } from '../../core/results.js';
 import { readState } from '../../core/state.js';
-import { getViewerOpenStatus } from '../../viewer/state.js';
+import type { SurfaceManifest } from '../../core/manifest.js';
+import { getViewerState } from '../../viewer/state.js';
+import { successResult, type MicrocanvasRecord } from '../contracts.js';
 
-export function runStatus(): void {
+export function runStatus(): CommandResult<MicrocanvasRecord> {
   const state = readState();
   const lock = readLock();
   const manifestExists = fs.existsSync(paths.activeManifest);
-  const viewerOpen = getViewerOpenStatus() || state.viewerOpen;
+  const viewer = getViewerState(state);
+  const primaryArtifact = manifestExists
+    ? path.join(paths.activeDir, (JSON.parse(fs.readFileSync(paths.activeManifest, 'utf8')) as SurfaceManifest).entryPath)
+    : undefined;
 
-  printResult({
-    ok: true,
-    code: 'OK',
-    message: 'runtime state loaded',
-    surfaceId: state.activeSurfaceId,
-    viewer: { open: viewerOpen },
-    lock,
-    artifacts: manifestExists ? { primary: paths.activeManifest } : {}
+  return successResult({
+    type: 'status',
+    id: state.activeSurfaceId ?? undefined,
+    verificationStatus: 'not_applicable',
+    record: {
+      message: 'runtime state loaded',
+      surfaceId: state.activeSurfaceId ?? undefined,
+      viewer: {
+        mode: viewer.mode,
+        open: viewer.open,
+        canVerify: viewer.verificationCapable
+      },
+      lock: {
+        held: lock.held,
+        reason: lock.reason
+      },
+      artifacts: {
+        primary: primaryArtifact
+      }
+    }
   });
 }

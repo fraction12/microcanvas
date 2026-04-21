@@ -4,11 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { getViewerOpenStatus } from '../dist/viewer/state.js';
 import { requestViewerSnapshot } from '../dist/viewer/snapshot.js';
 
 const execFileAsync = promisify(execFile);
-const repoRoot = '/Volumes/MacSSD/Projects/microcanvas';
+const testDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(testDir, '..');
 const cliPath = path.join(repoRoot, 'dist', 'cli', 'index.js');
 const runtimeRoot = path.join(repoRoot, 'runtime');
 const activeDir = path.join(runtimeRoot, 'active');
@@ -54,6 +56,68 @@ function writeRuntimeState(state) {
   fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
 }
 
+function writeActiveManifest(surfaceId, overrides = {}) {
+  fs.mkdirSync(activeDir, { recursive: true });
+  fs.writeFileSync(path.join(activeDir, 'manifest.json'), JSON.stringify({
+    surfaceId,
+    title: 'Fixture surface',
+    contentType: 'text/html',
+    entryPath: 'index.html',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    sourceKind: 'generated',
+    renderMode: 'wkwebview',
+    ...overrides
+  }, null, 2));
+}
+
+function expectSuccess(result) {
+  assert.equal(result.ok, true);
+  assert.ok(result.record);
+  assert.equal(typeof result.record, 'object');
+  assert.equal(result.error ?? null, null);
+  return result.record;
+}
+
+function expectFailure(result, code) {
+  assert.equal(result.ok, false);
+  assert.ok(result.error);
+  assert.equal(result.error.code, code);
+  assert.equal(typeof result.error.message, 'string');
+  return result.error;
+}
+
+function assertDisplayRecord(record, expected) {
+  assert.equal(record.surfaceId, expected.surfaceId);
+  assert.equal(record.lock.held, false);
+  assert.equal(record.artifacts.primary, expected.primaryArtifact);
+  assert.ok(['native', 'degraded', 'closed'].includes(record.viewer.mode));
+  assert.equal(typeof record.viewer.canVerify, 'boolean');
+}
+
+function assertDisplayVerification(result, viewerMode) {
+  if (viewerMode === 'native') {
+    assert.equal(result.verificationStatus, 'not_applicable');
+    assert.deepEqual(result.warnings ?? [], []);
+    return;
+  }
+
+  if (viewerMode === 'degraded') {
+    assert.equal(result.verificationStatus, 'unverified');
+    assert.equal(result.record.viewer.canVerify, false);
+    assert.ok((result.warnings ?? []).length > 0);
+    assert.match((result.warnings ?? []).join('\n'), /native viewer|degraded/i);
+    assert.equal(typeof result.nextAction, 'string');
+    return;
+  }
+
+  assert.equal(viewerMode, 'closed');
+  assert.equal(result.verificationStatus, 'not_applicable');
+  assert.equal(result.record.viewer.canVerify, false);
+  assert.ok((result.warnings ?? []).length > 0);
+  assert.match((result.warnings ?? []).join('\n'), /no viewer session|could be opened/i);
+}
+
 test.before(() => {
   fs.mkdirSync(fixtureDir, { recursive: true });
   fs.writeFileSync(insideFile, '# Hello\n\nInside root fixture.\n');
@@ -66,11 +130,15 @@ test.beforeEach(() => {
   resetRuntime();
 });
 
-test('show renders and activates an inside-root markdown file', async () => {
+test('show renders and activates an inside-root markdown file with explicit viewer capability metadata', async () => {
   const result = await runCli(['show', insideFile]);
-  assert.equal(result.ok, true);
-  assert.equal(result.code, 'OK');
-  assert.equal(result.viewer.open, true);
+  const record = expectSuccess(result);
+
+  assertDisplayRecord(record, {
+    surfaceId: record.surfaceId,
+    primaryArtifact: path.join(activeDir, 'index.html')
+  });
+  assertDisplayVerification(result, record.viewer.mode);
 
   const manifest = JSON.parse(fs.readFileSync(path.join(activeDir, 'manifest.json'), 'utf8'));
   assert.equal(manifest.entryPath, 'index.html');
@@ -80,9 +148,13 @@ test('show renders and activates an inside-root markdown file', async () => {
 
 test('show renders and activates csv as a deterministic html table surface', async () => {
   const result = await runCli(['show', csvFile]);
-  assert.equal(result.ok, true);
-  assert.equal(result.code, 'OK');
-  assert.equal(result.viewer.open, true);
+  const record = expectSuccess(result);
+
+  assertDisplayRecord(record, {
+    surfaceId: record.surfaceId,
+    primaryArtifact: path.join(activeDir, 'index.html')
+  });
+  assertDisplayVerification(result, record.viewer.mode);
 
   const manifest = JSON.parse(fs.readFileSync(path.join(activeDir, 'manifest.json'), 'utf8'));
   assert.equal(manifest.entryPath, 'index.html');
@@ -108,9 +180,13 @@ test('show renders and activates supported image files across formats', async ()
   for (const testCase of cases) {
     resetRuntime();
     const result = await runCli(['show', testCase.file]);
-    assert.equal(result.ok, true);
-    assert.equal(result.code, 'OK');
-    assert.equal(result.viewer.open, true);
+    const record = expectSuccess(result);
+
+    assertDisplayRecord(record, {
+      surfaceId: record.surfaceId,
+      primaryArtifact: path.join(activeDir, testCase.entryPath)
+    });
+    assertDisplayVerification(result, record.viewer.mode);
 
     const manifest = JSON.parse(fs.readFileSync(path.join(activeDir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.entryPath, testCase.entryPath);
@@ -149,12 +225,12 @@ test('render keeps adapter-backed staging behavior stable across supported famil
   for (const testCase of cases) {
     resetRuntime();
     const result = await runCli(['render', testCase.file]);
-    assert.equal(result.ok, true);
-    assert.equal(result.code, 'OK');
-    assert.ok(result.surfaceId);
-    assert.ok(result.artifacts.primary);
+    const record = expectSuccess(result);
 
-    const stagingDir = path.dirname(result.artifacts.primary);
+    assert.ok(record.surfaceId);
+    assert.ok(record.artifacts.primary);
+
+    const stagingDir = path.dirname(record.artifacts.primary);
     const manifest = JSON.parse(fs.readFileSync(path.join(stagingDir, 'manifest.json'), 'utf8'));
     assert.equal(manifest.entryPath, testCase.entryPath);
     assert.equal(manifest.renderMode, testCase.renderMode);
@@ -164,34 +240,54 @@ test('render keeps adapter-backed staging behavior stable across supported famil
   }
 });
 
-test('update preserves the active surface id', async () => {
+test('update preserves the active surface id and reports whether the viewer is native or degraded', async () => {
   const shown = await runCli(['show', insideFile]);
-  writeViewerState({
-    pid: process.pid,
-    lastSeenAt: new Date().toISOString(),
-    activeSurfaceId: shown.surfaceId
-  });
+  const shownRecord = expectSuccess(shown);
+
+  if (shownRecord.viewer.mode === 'native') {
+    writeViewerState({
+      pid: process.pid,
+      lastSeenAt: new Date().toISOString(),
+      activeSurfaceId: shownRecord.surfaceId
+    });
+  }
+
   const updated = await runCli(['update', updateFile]);
+  const updatedRecord = expectSuccess(updated);
 
-  assert.equal(updated.ok, true);
-  assert.equal(updated.surfaceId, shown.surfaceId);
+  assert.equal(updatedRecord.surfaceId, shownRecord.surfaceId);
+  assertDisplayVerification(updated, updatedRecord.viewer.mode);
 
-  writeViewerState({
-    pid: process.pid,
-    lastSeenAt: new Date().toISOString(),
-    activeSurfaceId: shown.surfaceId
-  });
-  const verify = await runCli(['verify']);
-  assert.equal(verify.ok, true);
-  assert.equal(verify.surfaceId, shown.surfaceId);
+  if (updatedRecord.viewer.mode === 'native') {
+    writeViewerState({
+      pid: process.pid,
+      lastSeenAt: new Date().toISOString(),
+      activeSurfaceId: shownRecord.surfaceId
+    });
+    const verify = await runCli(['verify']);
+    const verifyRecord = expectSuccess(verify);
+    assert.equal(verifyRecord.surfaceId, shownRecord.surfaceId);
+    assert.equal(verify.verificationStatus, 'verified');
+  } else {
+    const verify = await runCli(['verify']);
+    const error = expectFailure(verify, 'VERIFY_FAILED');
+    if (updatedRecord.viewer.mode === 'degraded') {
+      assert.match(error.message, /native viewer|degraded/i);
+    } else {
+      assert.equal(updatedRecord.viewer.mode, 'closed');
+      assert.match(error.message, /viewer is not confirmed open/i);
+    }
+  }
 });
 
-test('snapshot writes a snapshot artifact for the active surface', async () => {
+test('snapshot writes a snapshot artifact for the active surface when native viewer capability is available', async () => {
   const shown = await runCli(['show', insideFile]);
+  const shownRecord = expectSuccess(shown);
+
   writeViewerState({
     pid: process.pid,
     lastSeenAt: new Date().toISOString(),
-    activeSurfaceId: shown.surfaceId
+    activeSurfaceId: shownRecord.surfaceId
   });
 
   const pending = runCli(['snapshot']);
@@ -215,66 +311,96 @@ test('snapshot writes a snapshot artifact for the active surface', async () => {
   }, null, 2));
 
   const snapshot = await pending;
-  assert.equal(snapshot.ok, true);
-  assert.equal(snapshot.surfaceId, shown.surfaceId);
-  assert.ok(snapshot.artifacts.snapshot);
-  assert.ok(fs.existsSync(snapshot.artifacts.snapshot));
+  const record = expectSuccess(snapshot);
+  assert.equal(record.surfaceId, shownRecord.surfaceId);
+  assert.ok(record.artifacts.snapshot);
+  assert.ok(fs.existsSync(record.artifacts.snapshot));
+  assert.equal(snapshot.verificationStatus, 'verified');
 });
 
-test('outside-root file is rejected as INVALID_INPUT', async () => {
+test('outside-root file is rejected through AgentTK failure metadata', async () => {
   const result = await runCli(['show', outsideFile]);
-  assert.equal(result.ok, false);
-  assert.equal(result.code, 'INVALID_INPUT');
-  assert.match(result.message, /Path escapes allowed roots/);
+  const error = expectFailure(result, 'INVALID_INPUT');
+  assert.match(error.message, /Path escapes allowed roots/);
 });
 
 test('unsupported file types fail honestly with UNSUPPORTED_CONTENT', async () => {
   const result = await runCli(['show', unsupportedFile]);
-  assert.equal(result.ok, false);
-  assert.equal(result.code, 'UNSUPPORTED_CONTENT');
-  assert.match(result.message, /Supported today: html, md, pdf, csv, png, jpg, jpeg, gif, webp, txt, json, js, ts/);
+  const error = expectFailure(result, 'UNSUPPORTED_CONTENT');
+  assert.match(error.message, /Supported today: html, md, pdf, csv, png, jpg, jpeg, gif, webp, txt, json, js, ts/);
 });
 
-test('status reports viewer open when heartbeat is fresh and pid is alive', async () => {
+test('status reports native viewer mode when heartbeat is fresh and pid is alive', async () => {
+  writeRuntimeState({
+    activeSurfaceId: 'surface-native',
+    viewerMode: 'native',
+    viewerOpen: true,
+    updatedAt: new Date().toISOString()
+  });
+  writeActiveManifest('surface-native');
+  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>native</body></html>');
   writeViewerState({
     pid: process.pid,
     lastSeenAt: new Date().toISOString(),
-    activeSurfaceId: null
+    activeSurfaceId: 'surface-native'
   });
 
   assert.equal(getViewerOpenStatus(), true);
   const status = await runCli(['status']);
-  assert.equal(status.viewer.open, true);
+  const record = expectSuccess(status);
+  assert.equal(record.surfaceId, 'surface-native');
+  assert.equal(record.viewer.mode, 'native');
+  assert.equal(record.viewer.canVerify, true);
+  assert.equal(record.viewer.open, true);
 });
 
-test('verify fails when viewer heartbeat is stale', async () => {
+test('status reports degraded mode and disabled verification capability when only external-open fallback is recorded', async () => {
   writeRuntimeState({
-    activeSurfaceId: 'surface-stale',
-    viewerOpen: false,
+    activeSurfaceId: 'surface-degraded',
+    viewerMode: 'degraded',
+    viewerOpen: true,
     updatedAt: new Date().toISOString()
   });
-  fs.mkdirSync(activeDir, { recursive: true });
-  fs.writeFileSync(path.join(activeDir, 'manifest.json'), JSON.stringify({
-    surfaceId: 'surface-stale',
-    title: 'Stale surface',
-    contentType: 'text/html',
-    entryPath: 'index.html',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    sourceKind: 'generated',
-    renderMode: 'wkwebview'
-  }, null, 2));
-  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>stale</body></html>');
-  writeViewerState({
-    pid: process.pid,
-    lastSeenAt: new Date(Date.now() - 60_000).toISOString(),
-    activeSurfaceId: 'surface-stale'
+  writeActiveManifest('surface-degraded');
+  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>degraded</body></html>');
+
+  const status = await runCli(['status']);
+  const record = expectSuccess(status);
+  assert.equal(record.surfaceId, 'surface-degraded');
+  assert.equal(record.viewer.mode, 'degraded');
+  assert.equal(record.viewer.canVerify, false);
+  assert.equal(record.viewer.open, true);
+  assert.equal(record.artifacts.primary, path.join(activeDir, 'index.html'));
+});
+
+test('verify fails when only degraded viewer mode is available', async () => {
+  writeRuntimeState({
+    activeSurfaceId: 'surface-stale',
+    viewerMode: 'degraded',
+    viewerOpen: true,
+    updatedAt: new Date().toISOString()
   });
+  writeActiveManifest('surface-stale');
+  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>stale</body></html>');
 
   const verify = await runCli(['verify']);
-  assert.equal(verify.ok, false);
-  assert.equal(verify.code, 'VERIFY_FAILED');
-  assert.match(verify.message, /viewer is not confirmed open/);
+  const error = expectFailure(verify, 'VERIFY_FAILED');
+  assert.match(error.message, /native viewer|degraded/i);
+});
+
+test('snapshot fails clearly when only degraded viewer mode is available', async () => {
+  writeRuntimeState({
+    activeSurfaceId: 'surface-degraded',
+    viewerMode: 'degraded',
+    viewerOpen: true,
+    updatedAt: new Date().toISOString()
+  });
+  writeActiveManifest('surface-degraded');
+  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>degraded</body></html>');
+
+  const snapshot = await runCli(['snapshot']);
+  const error = expectFailure(snapshot, 'VERIFY_FAILED');
+  assert.match(error.message, /native viewer|degraded/i);
 });
 
 test('requestViewerSnapshot writes request and resolves response handshake', async () => {
@@ -312,8 +438,8 @@ test('requestViewerSnapshot writes request and resolves response handshake', asy
 
 test('human help output is command-aware', async () => {
   const rootHelp = await runCliText(['--help']);
-  assert.match(rootHelp.stdout, /Usage:/);
-  assert.match(rootHelp.stdout, /show <path\|surfaceId>/);
+  assert.match(rootHelp.stdout, /microcanvas/);
+  assert.match(rootHelp.stdout, /show - Activate a staged surface or render and show a source file/);
 
   const renderHelp = await runCliText(['render', '--help']);
   assert.match(renderHelp.stdout, /Usage: microcanvas render <path>/);

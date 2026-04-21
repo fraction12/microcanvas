@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
+import { viewerModeIsOpen, type ViewerState } from '../core/manifest.js';
 import { paths } from '../core/paths.js';
 import { readState, writeState } from '../core/state.js';
-import { getViewerOpenStatus } from './state.js';
+import { getViewerState } from './state.js';
 
 function viewerPackageDir(): string {
   return path.join(paths.repoRoot, 'apps', 'macos-viewer', 'MicrocanvasViewer');
@@ -76,19 +77,38 @@ function openPath(entryPath: string): boolean {
   }
 }
 
-export async function launchViewer(entryPath?: string): Promise<{ open: boolean }> {
+function buildViewerState(mode: ViewerState['mode'], activeSurfaceId: string | null): ViewerState {
+  return {
+    mode,
+    open: viewerModeIsOpen(mode),
+    verificationCapable: mode === 'native',
+    activeSurfaceId
+  };
+}
+
+export async function launchViewer(entryPath?: string): Promise<ViewerState> {
   const state = readState();
   const canOpen = Boolean(entryPath && fs.existsSync(entryPath));
-  const launched = canOpen && entryPath
-    ? launchNativeViewerBinary() || openPath(entryPath)
-    : false;
-  const open = launched || getViewerOpenStatus();
+  let viewerMode: ViewerState['mode'] = 'closed';
+
+  if (canOpen && entryPath) {
+    if (launchNativeViewerBinary()) {
+      viewerMode = 'native';
+    } else if (openPath(entryPath)) {
+      viewerMode = 'degraded';
+    }
+  } else {
+    viewerMode = getViewerState(state).mode;
+  }
+
+  const viewer = buildViewerState(viewerMode, state.activeSurfaceId);
 
   writeState({
     ...state,
-    viewerOpen: open,
+    viewerMode,
+    viewerOpen: viewer.open,
     updatedAt: new Date().toISOString()
   });
 
-  return { open };
+  return viewer;
 }

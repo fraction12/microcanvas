@@ -9,15 +9,33 @@ export interface SurfaceManifest {
   renderMode: string;
 }
 
+export type ViewerMode = 'closed' | 'degraded' | 'native';
+
+export function isViewerMode(value: unknown): value is ViewerMode {
+  return value === 'closed' || value === 'degraded' || value === 'native';
+}
+
+export function viewerModeIsOpen(mode: ViewerMode): boolean {
+  return mode !== 'closed';
+}
+
+export function viewerModeHasVerificationCapability(mode: ViewerMode): boolean {
+  return mode === 'native';
+}
+
 export interface RuntimeState {
   activeSurfaceId: string | null;
+  viewerMode: ViewerMode;
   viewerOpen: boolean;
   updatedAt: string;
 }
 
 export interface ViewerState {
-  pid: number;
-  lastSeenAt: string;
+  mode: ViewerMode;
+  open: boolean;
+  verificationCapable: boolean;
+  pid?: number;
+  lastSeenAt?: string;
   activeSurfaceId?: string | null;
 }
 

@@ -1,0 +1,6 @@
+name: polish-viewer-experience
+status: proposed
+created: 2026-04-21
+owners:
+  - Dushyant Garg
+summary: Improve Microcanvas viewer presentation, fallback states, and load/snapshot confidence without bloating the runtime model.

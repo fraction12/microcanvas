@@ -13,10 +13,10 @@
 
 ## 3. Table / data surfaces
 
-- [ ] 3.1 Add CSV support through deterministic HTML table rendering.
-- [ ] 3.2 Define manifest/renderMode behavior for table surfaces.
-- [ ] 3.3 Add tests for CSV render/show behavior.
-- [ ] 3.4 Document CSV/table support clearly.
+- [x] 3.1 Add CSV support through deterministic HTML table rendering.
+- [x] 3.2 Define manifest/renderMode behavior for table surfaces.
+- [x] 3.3 Add tests for CSV render/show behavior.
+- [x] 3.4 Document CSV/table support clearly.
 
 ## 4. Structured text surfaces
 
@@ -27,9 +27,9 @@
 
 ## 5. Internal structure
 
-- [ ] 5.1 Refactor inline content detection toward an adapter registry or equivalent structure.
-- [ ] 5.2 Ensure new surface families plug into the same manifest/viewer contract.
-- [ ] 5.3 Keep the architecture lightweight and deterministic.
+- [x] 5.1 Refactor inline content detection toward an adapter registry or equivalent structure.
+- [x] 5.2 Ensure new surface families plug into the same manifest/viewer contract.
+- [x] 5.3 Keep the architecture lightweight and deterministic.
 
 ## 6. Validation
 

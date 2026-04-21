@@ -7,7 +7,7 @@ Microcanvas is a standalone, tool-agnostic canvas tool that covers the same core
 ## What works today
 
 - `render` renders a supported source into staging
-- `show` activates a surface and opens or reuses the native viewer, including explicit image-surface coverage for png, jpg/jpeg, gif, and webp
+- `show` activates a surface and opens or reuses the native viewer, including explicit image-surface coverage for png, jpg/jpeg, gif, and webp, plus deterministic CSV-to-table rendering
 - `update` refreshes the active surface while preserving surface identity
 - `status` reports runtime and viewer state
 - `verify` checks both active surface files and viewer-reported state
@@ -21,6 +21,7 @@ Supported now:
 - `.html`, `.htm`
 - `.md`, `.markdown`
 - `.pdf`
+- `.csv` (rendered into a deterministic HTML table surface)
 - `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
 - `.txt`, `.json`, `.js`, `.ts` (wrapped into an HTML code-view surface)
 
@@ -37,7 +38,7 @@ If a file type is not supported, Microcanvas returns `UNSUPPORTED_CONTENT` inste
 - native macOS viewer
 - single active window
 - single active surface at a time
-- `wkwebview` surfaces for html and generated html
+- `wkwebview` surfaces for html, generated html, and CSV-backed table surfaces
 - native PDF display for pdf surfaces
 - native image display for png, jpg/jpeg, gif, and webp surfaces
 - viewer heartbeat written into runtime state
@@ -59,6 +60,11 @@ Microcanvas keeps a canonical runtime root with:
 - no symlink escapes
 - source paths must resolve inside allowed roots
 - unsupported formats fail clearly
+
+## Internal structure
+
+Surface detection and materialization now run through a lightweight adapter registry in `src/core/surface.ts`.
+Each supported family declares its extensions, manifest/viewer contract, and any deterministic transform in one place, which keeps the refactor explicit and reversible without changing CLI behavior.
 
 ## Current status
 

@@ -17,6 +17,7 @@ const fixtureDir = path.join(repoRoot, 'test', 'fixtures');
 const insideFile = path.join(fixtureDir, 'inside.md');
 const updateFile = path.join(fixtureDir, 'updated.md');
 const unsupportedFile = path.join(fixtureDir, 'unsupported.zip');
+const csvFile = path.join(fixtureDir, 'sample-table.csv');
 const pngImageFile = path.join(fixtureDir, 'test-image.png');
 const jpgImageFile = path.join(fixtureDir, 'test-image.jpg');
 const gifImageFile = path.join(fixtureDir, 'test-image.gif');
@@ -77,6 +78,25 @@ test('show renders and activates an inside-root markdown file', async () => {
   assert.ok(fs.existsSync(path.join(activeDir, 'index.html')));
 });
 
+test('show renders and activates csv as a deterministic html table surface', async () => {
+  const result = await runCli(['show', csvFile]);
+  assert.equal(result.ok, true);
+  assert.equal(result.code, 'OK');
+  assert.equal(result.viewer.open, true);
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(activeDir, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.entryPath, 'index.html');
+  assert.equal(manifest.renderMode, 'wkwebview');
+  assert.equal(manifest.sourceKind, 'table');
+  assert.equal(manifest.contentType, 'text/html');
+
+  const html = fs.readFileSync(path.join(activeDir, 'index.html'), 'utf8');
+  assert.match(html, /<table class="data-table">/);
+  assert.match(html, /<thead><tr><th scope="col">name<\/th><th scope="col">role<\/th><th scope="col">notes<\/th><\/tr><\/thead>/);
+  assert.match(html, /<tbody><tr><td>Dushyant<\/td><td>owner<\/td><td>Keeps scope tight<\/td><\/tr>/);
+  assert.match(html, /Uses &quot;escaped quotes&quot; cleanly/);
+});
+
 test('show renders and activates supported image files across formats', async () => {
   const cases = [
     { file: pngImageFile, entryPath: 'test-image.png', contentType: 'image/png' },
@@ -98,6 +118,49 @@ test('show renders and activates supported image files across formats', async ()
     assert.equal(manifest.sourceKind, 'image');
     assert.equal(manifest.contentType, testCase.contentType);
     assert.ok(fs.existsSync(path.join(activeDir, testCase.entryPath)));
+  }
+});
+
+test('render keeps adapter-backed staging behavior stable across supported families', async () => {
+  const cases = [
+    {
+      file: insideFile,
+      entryPath: 'index.html',
+      renderMode: 'wkwebview',
+      sourceKind: 'generated',
+      contentType: 'text/html'
+    },
+    {
+      file: csvFile,
+      entryPath: 'index.html',
+      renderMode: 'wkwebview',
+      sourceKind: 'table',
+      contentType: 'text/html'
+    },
+    {
+      file: pngImageFile,
+      entryPath: 'test-image.png',
+      renderMode: 'image',
+      sourceKind: 'image',
+      contentType: 'image/png'
+    }
+  ];
+
+  for (const testCase of cases) {
+    resetRuntime();
+    const result = await runCli(['render', testCase.file]);
+    assert.equal(result.ok, true);
+    assert.equal(result.code, 'OK');
+    assert.ok(result.surfaceId);
+    assert.ok(result.artifacts.primary);
+
+    const stagingDir = path.dirname(result.artifacts.primary);
+    const manifest = JSON.parse(fs.readFileSync(path.join(stagingDir, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.entryPath, testCase.entryPath);
+    assert.equal(manifest.renderMode, testCase.renderMode);
+    assert.equal(manifest.sourceKind, testCase.sourceKind);
+    assert.equal(manifest.contentType, testCase.contentType);
+    assert.ok(fs.existsSync(path.join(stagingDir, testCase.entryPath)));
   }
 });
 
@@ -169,7 +232,7 @@ test('unsupported file types fail honestly with UNSUPPORTED_CONTENT', async () =
   const result = await runCli(['show', unsupportedFile]);
   assert.equal(result.ok, false);
   assert.equal(result.code, 'UNSUPPORTED_CONTENT');
-  assert.match(result.message, /Supported today: html, md, pdf, png, jpg, jpeg, gif, webp, txt, json, js, ts/);
+  assert.match(result.message, /Supported today: html, md, pdf, csv, png, jpg, jpeg, gif, webp, txt, json, js, ts/);
 });
 
 test('status reports viewer open when heartbeat is fresh and pid is alive', async () => {

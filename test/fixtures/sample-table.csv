@@ -1,0 +1,4 @@
+name,role,notes
+Dushyant,owner,"Keeps scope tight"
+Friday,worker,"Renders deterministic tables"
+Quoted,example,"Uses ""escaped quotes"" cleanly"

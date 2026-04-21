@@ -5,7 +5,7 @@ export interface SurfaceManifest {
   entryPath: string;
   createdAt: string;
   updatedAt: string;
-  sourceKind: 'html' | 'pdf' | 'artifact' | 'generated' | 'image';
+  sourceKind: 'html' | 'pdf' | 'artifact' | 'generated' | 'image' | 'table';
   renderMode: string;
 }
 

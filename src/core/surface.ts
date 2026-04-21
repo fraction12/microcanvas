@@ -18,12 +18,18 @@ export interface RenderedSurface {
   primaryArtifact: string;
 }
 
+type SurfaceTransform = 'markdown-to-html' | 'csv-to-html-table';
+
 type Detection = {
   contentType: string;
   sourceKind: SurfaceManifest['sourceKind'];
   renderMode: string;
   targetName: string;
-  transform?: 'markdown-to-html';
+  transform?: SurfaceTransform;
+};
+
+type SurfaceAdapter = Detection & {
+  extensions: string[];
 };
 
 function unsupportedContent(message: string): never {
@@ -31,6 +37,75 @@ function unsupportedContent(message: string): never {
 }
 
 const allowedRoots = [paths.repoRoot];
+
+const surfaceAdapters: SurfaceAdapter[] = [
+  {
+    extensions: ['.html', '.htm'],
+    contentType: 'text/html',
+    sourceKind: 'html',
+    renderMode: 'wkwebview',
+    targetName: 'index.html'
+  },
+  {
+    extensions: ['.md', '.markdown'],
+    contentType: 'text/html',
+    sourceKind: 'generated',
+    renderMode: 'wkwebview',
+    targetName: 'index.html',
+    transform: 'markdown-to-html'
+  },
+  {
+    extensions: ['.pdf'],
+    contentType: 'application/pdf',
+    sourceKind: 'pdf',
+    renderMode: 'pdf',
+    targetName: '{basename}'
+  },
+  {
+    extensions: ['.csv'],
+    contentType: 'text/html',
+    sourceKind: 'table',
+    renderMode: 'wkwebview',
+    targetName: 'index.html',
+    transform: 'csv-to-html-table'
+  },
+  {
+    extensions: ['.png'],
+    contentType: 'image/png',
+    sourceKind: 'image',
+    renderMode: 'image',
+    targetName: '{basename}'
+  },
+  {
+    extensions: ['.jpg', '.jpeg'],
+    contentType: 'image/jpeg',
+    sourceKind: 'image',
+    renderMode: 'image',
+    targetName: '{basename}'
+  },
+  {
+    extensions: ['.gif'],
+    contentType: 'image/gif',
+    sourceKind: 'image',
+    renderMode: 'image',
+    targetName: '{basename}'
+  },
+  {
+    extensions: ['.webp'],
+    contentType: 'image/webp',
+    sourceKind: 'image',
+    renderMode: 'image',
+    targetName: '{basename}'
+  },
+  {
+    extensions: ['.txt', '.json', '.js', '.ts'],
+    contentType: 'text/html',
+    sourceKind: 'generated',
+    renderMode: 'wkwebview',
+    targetName: 'index.html',
+    transform: 'markdown-to-html'
+  }
+];
 
 function ensureSafeResolvedPath(inputPath: string): string {
   const resolved = path.resolve(inputPath);
@@ -53,45 +128,134 @@ function ensureSafeResolvedPath(inputPath: string): string {
   return real;
 }
 
+function resolveTargetName(adapter: SurfaceAdapter, sourcePath: string): string {
+  return adapter.targetName === '{basename}' ? path.basename(sourcePath) : adapter.targetName;
+}
+
 function detectContentType(sourcePath: string): Detection {
   const ext = path.extname(sourcePath).toLowerCase();
-  if (ext === '.html' || ext === '.htm') {
-    return { contentType: 'text/html', sourceKind: 'html', renderMode: 'wkwebview', targetName: 'index.html' };
+  const adapter = surfaceAdapters.find((candidate) => candidate.extensions.includes(ext));
+
+  if (!adapter) {
+    unsupportedContent(`Unsupported content type for ${path.basename(sourcePath)}. Supported today: html, md, pdf, csv, png, jpg, jpeg, gif, webp, txt, json, js, ts.`);
   }
-  if (ext === '.md' || ext === '.markdown') {
-    return {
-      contentType: 'text/html',
-      sourceKind: 'generated',
-      renderMode: 'wkwebview',
-      targetName: 'index.html',
-      transform: 'markdown-to-html'
-    };
+
+  return {
+    contentType: adapter.contentType,
+    sourceKind: adapter.sourceKind,
+    renderMode: adapter.renderMode,
+    targetName: resolveTargetName(adapter, sourcePath),
+    transform: adapter.transform
+  };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function parseCsvRow(line: string): string[] {
+  const cells: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === ',' && !inQuotes) {
+      cells.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
   }
-  if (ext === '.pdf') {
-    return { contentType: 'application/pdf', sourceKind: 'pdf', renderMode: 'pdf', targetName: path.basename(sourcePath) };
+
+  if (inQuotes) {
+    throw new Error('UNSUPPORTED_CONTENT: CSV contains an unterminated quoted field.');
   }
-  if (ext === '.png') {
-    return { contentType: 'image/png', sourceKind: 'image', renderMode: 'image', targetName: path.basename(sourcePath) };
+
+  cells.push(current);
+  return cells;
+}
+
+function parseCsv(raw: string): string[][] {
+  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (normalized.length === 0) {
+    return [];
   }
-  if (ext === '.jpg' || ext === '.jpeg') {
-    return { contentType: 'image/jpeg', sourceKind: 'image', renderMode: 'image', targetName: path.basename(sourcePath) };
+
+  const rows: string[][] = [];
+  let currentLine = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < normalized.length; i += 1) {
+    const char = normalized[i];
+    if (char === '"') {
+      if (inQuotes && normalized[i + 1] === '"') {
+        currentLine += '""';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+        currentLine += char;
+      }
+      continue;
+    }
+
+    if (char === '\n' && !inQuotes) {
+      rows.push(parseCsvRow(currentLine));
+      currentLine = '';
+      continue;
+    }
+
+    currentLine += char;
   }
-  if (ext === '.gif') {
-    return { contentType: 'image/gif', sourceKind: 'image', renderMode: 'image', targetName: path.basename(sourcePath) };
+
+  if (inQuotes) {
+    throw new Error('UNSUPPORTED_CONTENT: CSV contains an unterminated quoted field.');
   }
-  if (ext === '.webp') {
-    return { contentType: 'image/webp', sourceKind: 'image', renderMode: 'image', targetName: path.basename(sourcePath) };
+
+  if (currentLine.length > 0 || normalized.endsWith('\n')) {
+    rows.push(parseCsvRow(currentLine));
   }
-  if (ext === '.txt' || ext === '.json' || ext === '.js' || ext === '.ts') {
-    return {
-      contentType: 'text/html',
-      sourceKind: 'generated',
-      renderMode: 'wkwebview',
-      targetName: 'index.html',
-      transform: 'markdown-to-html'
-    };
-  }
-  unsupportedContent(`Unsupported content type for ${path.basename(sourcePath)}. Supported today: html, md, pdf, png, jpg, jpeg, gif, webp, txt, json, js, ts.`);
+
+  return rows;
+}
+
+function renderCsvTable(title: string, raw: string): string {
+  const rows = parseCsv(raw);
+  const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+
+  const normalizedRows = rows.map((row) => {
+    const cells = row.slice();
+    while (cells.length < width) {
+      cells.push('');
+    }
+    return cells;
+  });
+
+  const header = normalizedRows[0] ?? [];
+  const bodyRows = normalizedRows.slice(1);
+  const tableHeader = header.length > 0
+    ? `<thead><tr>${header.map((cell) => `<th scope="col">${escapeHtml(cell)}</th>`).join('')}</tr></thead>`
+    : '';
+  const tableBody = bodyRows.length > 0
+    ? `<tbody>${bodyRows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody>`
+    : '';
+  const empty = normalizedRows.length === 0 ? '<p class="table-empty">CSV file is empty.</p>' : '';
+
+  return buildHtmlDocument(title, `${empty}<table class="data-table">${tableHeader}${tableBody}</table>`);
 }
 
 function buildHtmlDocument(title: string, body: string): string {
@@ -121,6 +285,24 @@ function buildHtmlDocument(title: string, body: string): string {
         overflow-x: auto;
         background: rgba(127, 127, 127, 0.12);
       }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 24px 0;
+      }
+      th, td {
+        padding: 10px 12px;
+        border: 1px solid rgba(127, 127, 127, 0.3);
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: rgba(127, 127, 127, 0.12);
+      }
+      .table-empty {
+        font-style: italic;
+        opacity: 0.8;
+      }
       img {
         max-width: 100%;
         height: auto;
@@ -140,6 +322,13 @@ async function materializeArtifact(resolvedSource: string, targetPath: string, d
       ? raw
       : `\`\`\`\n${raw}\n\`\`\``);
     const html = buildHtmlDocument(title, rendered);
+    fs.writeFileSync(targetPath, html);
+    return;
+  }
+
+  if (detected.transform === 'csv-to-html-table') {
+    const raw = fs.readFileSync(resolvedSource, 'utf8');
+    const html = renderCsvTable(title, raw);
     fs.writeFileSync(targetPath, html);
     return;
   }

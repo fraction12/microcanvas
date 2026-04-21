@@ -6,10 +6,10 @@
 
 ## 2. Image surfaces
 
-- [ ] 2.1 Add first-class image surface support.
-- [ ] 2.2 Define viewer display behavior for image surfaces.
-- [ ] 2.3 Add tests for image render/show behavior.
-- [ ] 2.4 Document image support in the README and spec artifacts.
+- [x] 2.1 Add first-class image surface support.
+- [x] 2.2 Define viewer display behavior for image surfaces.
+- [x] 2.3 Add tests for image render/show behavior.
+- [x] 2.4 Document image support in the README and spec artifacts.
 
 ## 3. Table / data surfaces
 

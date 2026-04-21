@@ -7,7 +7,7 @@ Microcanvas is a standalone, tool-agnostic canvas tool that covers the same core
 ## What works today
 
 - `render` renders a supported source into staging
-- `show` activates a surface and opens or reuses the native viewer
+- `show` activates a surface and opens or reuses the native viewer, including explicit image-surface coverage for png, jpg/jpeg, gif, and webp
 - `update` refreshes the active surface while preserving surface identity
 - `status` reports runtime and viewer state
 - `verify` checks both active surface files and viewer-reported state
@@ -21,12 +21,13 @@ Supported now:
 - `.html`, `.htm`
 - `.md`, `.markdown`
 - `.pdf`
+- `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
 - `.txt`, `.json`, `.js`, `.ts` (wrapped into an HTML code-view surface)
 
 Not supported yet:
 - arbitrary binary artifacts
 - archives like `.zip`
-- images as first-class viewer surfaces
+- `.svg` and other image-like formats without an explicit display path
 - office docs and other formats without an explicit render/display path
 
 If a file type is not supported, Microcanvas returns `UNSUPPORTED_CONTENT` instead of pretending success.
@@ -36,6 +37,9 @@ If a file type is not supported, Microcanvas returns `UNSUPPORTED_CONTENT` inste
 - native macOS viewer
 - single active window
 - single active surface at a time
+- `wkwebview` surfaces for html and generated html
+- native PDF display for pdf surfaces
+- native image display for png, jpg/jpeg, gif, and webp surfaces
 - viewer heartbeat written into runtime state
 - viewer-backed verify and snapshot flows
 

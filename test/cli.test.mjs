@@ -17,6 +17,10 @@ const fixtureDir = path.join(repoRoot, 'test', 'fixtures');
 const insideFile = path.join(fixtureDir, 'inside.md');
 const updateFile = path.join(fixtureDir, 'updated.md');
 const unsupportedFile = path.join(fixtureDir, 'unsupported.zip');
+const pngImageFile = path.join(fixtureDir, 'test-image.png');
+const jpgImageFile = path.join(fixtureDir, 'test-image.jpg');
+const gifImageFile = path.join(fixtureDir, 'test-image.gif');
+const webpImageFile = path.join(fixtureDir, 'test-image.webp');
 const outsideFile = '/tmp/microcanvas-outside-test.txt';
 const viewerStateFile = path.join(runtimeRoot, 'viewer-state.json');
 const viewerRequestFile = path.join(runtimeRoot, 'viewer-request.json');
@@ -71,6 +75,30 @@ test('show renders and activates an inside-root markdown file', async () => {
   assert.equal(manifest.entryPath, 'index.html');
   assert.equal(manifest.renderMode, 'wkwebview');
   assert.ok(fs.existsSync(path.join(activeDir, 'index.html')));
+});
+
+test('show renders and activates supported image files across formats', async () => {
+  const cases = [
+    { file: pngImageFile, entryPath: 'test-image.png', contentType: 'image/png' },
+    { file: jpgImageFile, entryPath: 'test-image.jpg', contentType: 'image/jpeg' },
+    { file: gifImageFile, entryPath: 'test-image.gif', contentType: 'image/gif' },
+    { file: webpImageFile, entryPath: 'test-image.webp', contentType: 'image/webp' }
+  ];
+
+  for (const testCase of cases) {
+    resetRuntime();
+    const result = await runCli(['show', testCase.file]);
+    assert.equal(result.ok, true);
+    assert.equal(result.code, 'OK');
+    assert.equal(result.viewer.open, true);
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(activeDir, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.entryPath, testCase.entryPath);
+    assert.equal(manifest.renderMode, 'image');
+    assert.equal(manifest.sourceKind, 'image');
+    assert.equal(manifest.contentType, testCase.contentType);
+    assert.ok(fs.existsSync(path.join(activeDir, testCase.entryPath)));
+  }
 });
 
 test('update preserves the active surface id', async () => {
@@ -141,7 +169,7 @@ test('unsupported file types fail honestly with UNSUPPORTED_CONTENT', async () =
   const result = await runCli(['show', unsupportedFile]);
   assert.equal(result.ok, false);
   assert.equal(result.code, 'UNSUPPORTED_CONTENT');
-  assert.match(result.message, /Supported today: html, md, pdf, txt, json, js, ts/);
+  assert.match(result.message, /Supported today: html, md, pdf, png, jpg, jpeg, gif, webp, txt, json, js, ts/);
 });
 
 test('status reports viewer open when heartbeat is fresh and pid is alive', async () => {

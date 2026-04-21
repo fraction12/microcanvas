@@ -70,6 +70,18 @@ function detectContentType(sourcePath: string): Detection {
   if (ext === '.pdf') {
     return { contentType: 'application/pdf', sourceKind: 'pdf', renderMode: 'pdf', targetName: path.basename(sourcePath) };
   }
+  if (ext === '.png') {
+    return { contentType: 'image/png', sourceKind: 'image', renderMode: 'image', targetName: path.basename(sourcePath) };
+  }
+  if (ext === '.jpg' || ext === '.jpeg') {
+    return { contentType: 'image/jpeg', sourceKind: 'image', renderMode: 'image', targetName: path.basename(sourcePath) };
+  }
+  if (ext === '.gif') {
+    return { contentType: 'image/gif', sourceKind: 'image', renderMode: 'image', targetName: path.basename(sourcePath) };
+  }
+  if (ext === '.webp') {
+    return { contentType: 'image/webp', sourceKind: 'image', renderMode: 'image', targetName: path.basename(sourcePath) };
+  }
   if (ext === '.txt' || ext === '.json' || ext === '.js' || ext === '.ts') {
     return {
       contentType: 'text/html',
@@ -79,7 +91,7 @@ function detectContentType(sourcePath: string): Detection {
       transform: 'markdown-to-html'
     };
   }
-  unsupportedContent(`Unsupported content type for ${path.basename(sourcePath)}. Supported today: html, md, pdf, txt, json, js, ts.`);
+  unsupportedContent(`Unsupported content type for ${path.basename(sourcePath)}. Supported today: html, md, pdf, png, jpg, jpeg, gif, webp, txt, json, js, ts.`);
 }
 
 function buildHtmlDocument(title: string, body: string): string {

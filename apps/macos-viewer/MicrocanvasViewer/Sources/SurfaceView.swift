@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import PDFKit
+import AppKit
 
 struct SurfaceView: View {
     let url: URL
@@ -12,6 +13,8 @@ struct SurfaceView: View {
             WebSurfaceView(url: url)
         case "pdf":
             PDFSurfaceView(url: url)
+        case "image":
+            ImageSurfaceView(url: url)
         default:
             FileSurfaceFallback(url: url, manifest: manifest)
         }
@@ -43,6 +46,38 @@ struct PDFSurfaceView: NSViewRepresentable {
 
     func updateNSView(_ nsView: PDFView, context: Context) {
         nsView.document = PDFDocument(url: url)
+    }
+}
+
+struct ImageSurfaceView: View {
+    let url: URL
+
+    var body: some View {
+        GeometryReader { geometry in
+            Group {
+                if let image = NSImage(contentsOf: url) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: geometry.size.width, maxHeight: geometry.size.height)
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 32))
+                        Text("Unable to load image surface")
+                            .font(.headline)
+                        Text(url.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
     }
 }
 

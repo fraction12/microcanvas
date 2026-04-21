@@ -1,3 +1,5 @@
+![Microcanvas banner](docs/assets/readme-banner.png)
+
 # microcanvas
 
 A lightweight, reliable canvas runtime and viewer for AI coding tools.

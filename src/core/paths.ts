@@ -1,9 +1,25 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, '../../..');
+
+function findRepoRoot(startDir: string): string {
+  let current = startDir;
+  while (true) {
+    if (fs.existsSync(path.join(current, 'package.json')) || fs.existsSync(path.join(current, '.git'))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      throw new Error('Unable to locate repository root');
+    }
+    current = parent;
+  }
+}
+
+const repoRoot = findRepoRoot(__dirname);
 const runtimeRoot = path.join(repoRoot, 'runtime');
 
 export const paths = {

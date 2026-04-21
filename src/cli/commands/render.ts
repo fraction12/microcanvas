@@ -1,13 +1,40 @@
 import { printResult } from '../../core/results.js';
+import { renderSurface } from '../../core/surface.js';
 
-export function runRender(): void {
-  printResult({
-    ok: false,
-    code: 'UPDATE_NOT_SUPPORTED',
-    message: 'render not implemented yet',
-    surfaceId: null,
-    viewer: { open: false },
-    lock: { held: false },
-    artifacts: {}
-  });
+export async function runRender(sourcePath?: string): Promise<void> {
+  if (!sourcePath) {
+    printResult({
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: 'render requires a source file path',
+      surfaceId: null,
+      viewer: { open: false },
+      lock: { held: false },
+      artifacts: {}
+    });
+    return;
+  }
+
+  try {
+    const rendered = await renderSurface({ sourcePath });
+    printResult({
+      ok: true,
+      code: 'OK',
+      message: 'surface rendered to staging',
+      surfaceId: rendered.manifest.surfaceId,
+      viewer: { open: false },
+      lock: { held: false },
+      artifacts: { primary: rendered.primaryArtifact }
+    });
+  } catch (error) {
+    printResult({
+      ok: false,
+      code: 'INVALID_INPUT',
+      message: error instanceof Error ? error.message : 'render failed',
+      surfaceId: null,
+      viewer: { open: false },
+      lock: { held: false },
+      artifacts: {}
+    });
+  }
 }

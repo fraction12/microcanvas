@@ -4,8 +4,9 @@ import { paths } from '../../core/paths.js';
 import { printResult } from '../../core/results.js';
 import { readState } from '../../core/state.js';
 import type { SurfaceManifest } from '../../core/manifest.js';
+import { requestViewerSnapshot } from '../../viewer/snapshot.js';
 
-export function runSnapshot(): void {
+export async function runSnapshot(): Promise<void> {
   const state = readState();
 
   if (!state.activeSurfaceId || !fs.existsSync(paths.activeManifest)) {
@@ -36,18 +37,26 @@ export function runSnapshot(): void {
     return;
   }
 
-  fs.mkdirSync(paths.snapshotsDir, { recursive: true });
-  const ext = path.extname(manifest.entryPath) || '.artifact';
-  const snapshotPath = path.join(paths.snapshotsDir, `${manifest.surfaceId}${ext}`);
-  fs.copyFileSync(sourcePath, snapshotPath);
-
-  printResult({
-    ok: true,
-    code: 'OK',
-    message: 'snapshot captured',
-    surfaceId: manifest.surfaceId,
-    viewer: { open: state.viewerOpen },
-    lock: { held: false },
-    artifacts: { primary: sourcePath, snapshot: snapshotPath }
-  });
+  try {
+    const snapshotPath = await requestViewerSnapshot(manifest.surfaceId);
+    printResult({
+      ok: true,
+      code: 'OK',
+      message: 'snapshot captured',
+      surfaceId: manifest.surfaceId,
+      viewer: { open: true },
+      lock: { held: false },
+      artifacts: { primary: sourcePath, snapshot: snapshotPath }
+    });
+  } catch (error) {
+    printResult({
+      ok: false,
+      code: 'VERIFY_FAILED',
+      message: error instanceof Error ? error.message : 'snapshot failed',
+      surfaceId: manifest.surfaceId,
+      viewer: { open: state.viewerOpen },
+      lock: { held: false },
+      artifacts: { primary: sourcePath }
+    });
+  }
 }

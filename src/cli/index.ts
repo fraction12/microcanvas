@@ -28,7 +28,7 @@ async function main(): Promise<void> {
       runVerify();
       break;
     case 'snapshot':
-      runSnapshot();
+      await runSnapshot();
       break;
     default:
       printResult({

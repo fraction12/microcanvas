@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 struct RuntimeState: Decodable {
     let activeSurfaceId: String?
@@ -24,6 +25,22 @@ struct ViewerState: Codable {
     let activeSurfaceId: String?
 }
 
+struct SnapshotRequest: Decodable {
+    let type: String
+    let requestId: String
+    let snapshotPath: String
+    let surfaceId: String
+    let requestedAt: String
+}
+
+struct SnapshotResponse: Encodable {
+    let requestId: String
+    let ok: Bool
+    let snapshotPath: String?
+    let error: String?
+    let completedAt: String
+}
+
 @MainActor
 final class ViewerModel: ObservableObject {
     @Published var manifest: SurfaceManifest?
@@ -33,6 +50,7 @@ final class ViewerModel: ObservableObject {
     private let fileManager = FileManager.default
     private var timer: Timer?
     private var lastSeenUpdatedAt: String?
+    private var lastSnapshotRequestId: String?
     private let repoRootOverride: URL?
 
     init(repoRootOverride: URL? = ViewerModel.resolveRepoRootOverride()) {
@@ -90,12 +108,12 @@ final class ViewerModel: ObservableObject {
     private func pollRuntimeState() {
         do {
             let repoRoot = try locateRepoRoot()
-            let stateURL = repoRoot
-                .appendingPathComponent("runtime", isDirectory: true)
-                .appendingPathComponent("state.json", isDirectory: false)
+            let runtimeRoot = repoRoot.appendingPathComponent("runtime", isDirectory: true)
+            let stateURL = runtimeRoot.appendingPathComponent("state.json", isDirectory: false)
 
             guard fileManager.fileExists(atPath: stateURL.path) else {
                 writeViewerState()
+                tryHandleSnapshotRequest(in: runtimeRoot)
                 return
             }
 
@@ -107,10 +125,78 @@ final class ViewerModel: ObservableObject {
             } else {
                 writeViewerState()
             }
+            tryHandleSnapshotRequest(in: runtimeRoot)
         } catch {
             statusText = "Failed to poll runtime state: \(error.localizedDescription)"
             writeViewerState()
         }
+    }
+
+    private func tryHandleSnapshotRequest(in runtimeRoot: URL) {
+        let requestURL = runtimeRoot.appendingPathComponent("viewer-request.json", isDirectory: false)
+        let responseURL = runtimeRoot.appendingPathComponent("viewer-response.json", isDirectory: false)
+        guard fileManager.fileExists(atPath: requestURL.path) else {
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: requestURL)
+            let request = try JSONDecoder().decode(SnapshotRequest.self, from: data)
+            guard request.type == "snapshot" else {
+                return
+            }
+            guard request.requestId != lastSnapshotRequestId else {
+                return
+            }
+            lastSnapshotRequestId = request.requestId
+
+            let response: SnapshotResponse
+            if let window = AppDelegate.sharedWindow {
+                let snapshotURL = URL(fileURLWithPath: request.snapshotPath, isDirectory: false)
+                try fileManager.createDirectory(at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try capture(window: window, to: snapshotURL)
+                response = SnapshotResponse(
+                    requestId: request.requestId,
+                    ok: true,
+                    snapshotPath: snapshotURL.path,
+                    error: nil,
+                    completedAt: ISO8601DateFormatter().string(from: Date())
+                )
+            } else {
+                response = SnapshotResponse(
+                    requestId: request.requestId,
+                    ok: false,
+                    snapshotPath: nil,
+                    error: "viewer window is unavailable",
+                    completedAt: ISO8601DateFormatter().string(from: Date())
+                )
+            }
+
+            let responseData = try JSONEncoder().encode(response)
+            try responseData.write(to: responseURL)
+        } catch {
+            let fallback = SnapshotResponse(
+                requestId: lastSnapshotRequestId ?? "unknown",
+                ok: false,
+                snapshotPath: nil,
+                error: error.localizedDescription,
+                completedAt: ISO8601DateFormatter().string(from: Date())
+            )
+            if let responseData = try? JSONEncoder().encode(fallback) {
+                try? responseData.write(to: responseURL)
+            }
+        }
+    }
+
+    private func capture(window: NSWindow, to url: URL) throws {
+        guard let image = window.contentView?.bitmapImageRepForCachingDisplay(in: window.contentView?.bounds ?? .zero) else {
+            throw NSError(domain: "MicrocanvasViewer", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unable to allocate bitmap for snapshot"])
+        }
+        window.contentView?.cacheDisplay(in: window.contentView?.bounds ?? .zero, to: image)
+        guard let pngData = image.representation(using: .png, properties: [:]) else {
+            throw NSError(domain: "MicrocanvasViewer", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unable to encode snapshot as PNG"])
+        }
+        try pngData.write(to: url)
     }
 
     private func writeViewerState() {

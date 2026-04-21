@@ -27,6 +27,8 @@ export const paths = {
   runtimeRoot,
   stateFile: path.join(runtimeRoot, 'state.json'),
   viewerStateFile: path.join(runtimeRoot, 'viewer-state.json'),
+  viewerRequestFile: path.join(runtimeRoot, 'viewer-request.json'),
+  viewerResponseFile: path.join(runtimeRoot, 'viewer-response.json'),
   lockFile: path.join(runtimeRoot, 'lock.json'),
   activeDir: path.join(runtimeRoot, 'active'),
   activeManifest: path.join(runtimeRoot, 'active', 'manifest.json'),

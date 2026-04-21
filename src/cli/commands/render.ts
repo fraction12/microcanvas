@@ -27,10 +27,11 @@ export async function runRender(sourcePath?: string): Promise<void> {
       artifacts: { primary: rendered.primaryArtifact }
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'render failed';
     printResult({
       ok: false,
       code: 'INVALID_INPUT',
-      message: error instanceof Error ? error.message : 'render failed',
+      message: message.replace(/^INVALID_INPUT:\s*/, ''),
       surfaceId: null,
       viewer: { open: false },
       lock: { held: false },

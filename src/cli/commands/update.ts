@@ -1,17 +1,15 @@
-import path from 'node:path';
 import { acquireLock, readLock, releaseLock } from '../../core/lock.js';
-import { paths } from '../../core/paths.js';
 import { printResult } from '../../core/results.js';
 import { readState, writeState } from '../../core/state.js';
-import { getStagedSurface, promoteToActive, renderSurface } from '../../core/surface.js';
+import { updateActiveSurface } from '../../core/surface.js';
 import { launchViewer } from '../../viewer/launch.js';
 
-export async function runShow(sourceOrSurfaceId?: string): Promise<void> {
-  if (!sourceOrSurfaceId) {
+export async function runUpdate(sourcePath?: string): Promise<void> {
+  if (!sourcePath) {
     printResult({
       ok: false,
       code: 'INVALID_INPUT',
-      message: 'show requires a source file path or staged surface id',
+      message: 'update requires a source file path',
       surfaceId: null,
       viewer: { open: false },
       lock: { held: false },
@@ -20,7 +18,7 @@ export async function runShow(sourceOrSurfaceId?: string): Promise<void> {
     return;
   }
 
-  const blocked = acquireLock('show');
+  const blocked = acquireLock('update');
   if (blocked?.held) {
     printResult({
       ok: false,
@@ -37,17 +35,12 @@ export async function runShow(sourceOrSurfaceId?: string): Promise<void> {
   let releasedEarly = false;
 
   try {
-    const candidate = sourceOrSurfaceId.includes(path.sep) || sourceOrSurfaceId.includes('.')
-      ? await renderSurface({ sourcePath: sourceOrSurfaceId })
-      : getStagedSurface(sourceOrSurfaceId);
-
-    promoteToActive(candidate.stagingDir);
-    const activeEntry = path.join(paths.activeDir, candidate.manifest.entryPath);
-    const viewer = await launchViewer(activeEntry);
+    const updated = await updateActiveSurface(sourcePath);
+    const viewer = await launchViewer(updated.primaryArtifact);
     const current = readState();
     writeState({
       ...current,
-      activeSurfaceId: candidate.manifest.surfaceId,
+      activeSurfaceId: updated.manifest.surfaceId,
       viewerOpen: viewer.open,
       updatedAt: new Date().toISOString()
     });
@@ -58,18 +51,18 @@ export async function runShow(sourceOrSurfaceId?: string): Promise<void> {
     printResult({
       ok: true,
       code: 'OK',
-      message: 'surface is now active',
-      surfaceId: candidate.manifest.surfaceId,
+      message: 'active surface updated',
+      surfaceId: updated.manifest.surfaceId,
       viewer,
       lock: readLock(),
-      artifacts: { primary: activeEntry }
+      artifacts: { primary: updated.primaryArtifact }
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'show failed';
+    const message = error instanceof Error ? error.message : 'update failed';
     const invalidInput = message.startsWith('INVALID_INPUT:');
     printResult({
       ok: false,
-      code: invalidInput ? 'INVALID_INPUT' : 'SURFACE_NOT_FOUND',
+      code: invalidInput ? 'INVALID_INPUT' : 'UPDATE_NOT_SUPPORTED',
       message: invalidInput ? message.replace(/^INVALID_INPUT:\s*/, '') : message,
       surfaceId: null,
       viewer: { open: false },

@@ -9,6 +9,7 @@ import { createManifest } from './manifest.js';
 export interface RenderInput {
   sourcePath: string;
   title?: string;
+  surfaceId?: string;
 }
 
 export interface RenderedSurface {
@@ -24,6 +25,29 @@ type Detection = {
   targetName: string;
   transform?: 'markdown-to-html';
 };
+
+const allowedRoots = [paths.repoRoot];
+
+function ensureSafeResolvedPath(inputPath: string): string {
+  const resolved = path.resolve(inputPath);
+  const real = fs.realpathSync(resolved);
+
+  const insideAllowedRoot = allowedRoots.some((root) => {
+    const realRoot = fs.realpathSync(root);
+    return real === realRoot || real.startsWith(`${realRoot}${path.sep}`);
+  });
+
+  if (!insideAllowedRoot) {
+    throw new Error(`Path escapes allowed roots: ${inputPath}`);
+  }
+
+  const stats = fs.lstatSync(real);
+  if (stats.isSymbolicLink()) {
+    throw new Error(`Symlink paths are not allowed: ${inputPath}`);
+  }
+
+  return real;
+}
 
 function detectContentType(sourcePath: string): Detection {
   const ext = path.extname(sourcePath).toLowerCase();
@@ -41,6 +65,15 @@ function detectContentType(sourcePath: string): Detection {
   }
   if (ext === '.pdf') {
     return { contentType: 'application/pdf', sourceKind: 'pdf', renderMode: 'pdf', targetName: path.basename(sourcePath) };
+  }
+  if (ext === '.txt' || ext === '.json' || ext === '.js' || ext === '.ts') {
+    return {
+      contentType: 'text/html',
+      sourceKind: 'generated',
+      renderMode: 'wkwebview',
+      targetName: 'index.html',
+      transform: 'markdown-to-html'
+    };
   }
   return { contentType: 'application/octet-stream', sourceKind: 'artifact', renderMode: 'file', targetName: path.basename(sourcePath) };
 }
@@ -86,8 +119,10 @@ function buildHtmlDocument(title: string, body: string): string {
 
 async function materializeArtifact(resolvedSource: string, targetPath: string, detected: Detection, title: string): Promise<void> {
   if (detected.transform === 'markdown-to-html') {
-    const markdown = fs.readFileSync(resolvedSource, 'utf8');
-    const rendered = await marked.parse(markdown);
+    const raw = fs.readFileSync(resolvedSource, 'utf8');
+    const rendered = await marked.parse(path.extname(resolvedSource).toLowerCase() === '.md' || path.extname(resolvedSource).toLowerCase() === '.markdown'
+      ? raw
+      : `\`\`\`\n${raw}\n\`\`\``);
     const html = buildHtmlDocument(title, rendered);
     fs.writeFileSync(targetPath, html);
     return;
@@ -105,13 +140,15 @@ export function ensureRuntimeLayout(): void {
 
 export async function renderSurface(input: RenderInput): Promise<RenderedSurface> {
   ensureRuntimeLayout();
-  const resolvedSource = path.resolve(input.sourcePath);
-  if (!fs.existsSync(resolvedSource)) {
-    throw new Error(`Source file not found: ${resolvedSource}`);
-  }
 
+  let resolvedSource: string;
+  try {
+    resolvedSource = ensureSafeResolvedPath(input.sourcePath);
+  } catch (error) {
+    throw new Error(`INVALID_INPUT: ${error instanceof Error ? error.message : 'invalid source path'}`);
+  }
   const title = input.title ?? path.basename(resolvedSource);
-  const surfaceId = crypto.randomUUID();
+  const surfaceId = input.surfaceId ?? crypto.randomUUID();
   const stageDir = path.join(paths.stagingDir, surfaceId);
   const assetsDir = path.join(stageDir, 'assets');
   fs.rmSync(stageDir, { recursive: true, force: true });
@@ -150,6 +187,31 @@ export function getStagedSurface(surfaceId: string): { manifest: SurfaceManifest
     manifest,
     stagingDir: stageDir,
     primaryArtifact: path.join(stageDir, manifest.entryPath)
+  };
+}
+
+export function getActiveSurface(): { manifest: SurfaceManifest; primaryArtifact: string } {
+  if (!fs.existsSync(paths.activeManifest)) {
+    throw new Error('No active surface');
+  }
+  const manifest = JSON.parse(fs.readFileSync(paths.activeManifest, 'utf8')) as SurfaceManifest;
+  return {
+    manifest,
+    primaryArtifact: path.join(paths.activeDir, manifest.entryPath)
+  };
+}
+
+export async function updateActiveSurface(sourcePath: string): Promise<{ manifest: SurfaceManifest; primaryArtifact: string }> {
+  const active = getActiveSurface();
+  const rendered = await renderSurface({
+    sourcePath,
+    title: active.manifest.title,
+    surfaceId: active.manifest.surfaceId
+  });
+  promoteToActive(rendered.stagingDir);
+  return {
+    manifest: rendered.manifest,
+    primaryArtifact: path.join(paths.activeDir, rendered.manifest.entryPath)
   };
 }
 

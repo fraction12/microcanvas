@@ -12,6 +12,7 @@
     "test": "npm run build && node --test test/*.test.mjs"
   },
   "dependencies": {
+    "agenttk": "^0.1.5",
     "marked": "^15.0.12"
   },
   "devDependencies": {

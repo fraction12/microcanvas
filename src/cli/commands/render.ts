@@ -28,10 +28,11 @@ export async function runRender(sourcePath?: string): Promise<void> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'render failed';
+    const unsupported = message.startsWith('UNSUPPORTED_CONTENT:');
     printResult({
       ok: false,
-      code: 'INVALID_INPUT',
-      message: message.replace(/^INVALID_INPUT:\s*/, ''),
+      code: unsupported ? 'UNSUPPORTED_CONTENT' : 'INVALID_INPUT',
+      message: message.replace(/^(INVALID_INPUT|UNSUPPORTED_CONTENT):\s*/, ''),
       surfaceId: null,
       viewer: { open: false },
       lock: { held: false },

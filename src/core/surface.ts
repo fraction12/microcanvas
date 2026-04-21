@@ -26,6 +26,10 @@ type Detection = {
   transform?: 'markdown-to-html';
 };
 
+function unsupportedContent(message: string): never {
+  throw new Error(`UNSUPPORTED_CONTENT: ${message}`);
+}
+
 const allowedRoots = [paths.repoRoot];
 
 function ensureSafeResolvedPath(inputPath: string): string {
@@ -75,7 +79,7 @@ function detectContentType(sourcePath: string): Detection {
       transform: 'markdown-to-html'
     };
   }
-  return { contentType: 'application/octet-stream', sourceKind: 'artifact', renderMode: 'file', targetName: path.basename(sourcePath) };
+  unsupportedContent(`Unsupported content type for ${path.basename(sourcePath)}. Supported today: html, md, pdf, txt, json, js, ts.`);
 }
 
 function buildHtmlDocument(title: string, body: string): string {
@@ -145,7 +149,11 @@ export async function renderSurface(input: RenderInput): Promise<RenderedSurface
   try {
     resolvedSource = ensureSafeResolvedPath(input.sourcePath);
   } catch (error) {
-    throw new Error(`INVALID_INPUT: ${error instanceof Error ? error.message : 'invalid source path'}`);
+    const message = error instanceof Error ? error.message : 'invalid source path';
+    if (message.startsWith('UNSUPPORTED_CONTENT:')) {
+      throw new Error(message);
+    }
+    throw new Error(`INVALID_INPUT: ${message}`);
   }
   const title = input.title ?? path.basename(resolvedSource);
   const surfaceId = input.surfaceId ?? crypto.randomUUID();

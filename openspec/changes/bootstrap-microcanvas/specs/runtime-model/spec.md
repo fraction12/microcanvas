@@ -80,16 +80,21 @@ The system SHALL prevent concurrent mutation of the active surface while it is b
 - **WHEN** the active surface has been fully written and displayed
 - **THEN** later non-mutating operations may proceed without being blocked by the earlier completed write
 
-### Requirement: Support broad viewable content
-The system SHALL support showing broadly viewable artifacts instead of narrowly limiting content to one markup format.
+### Requirement: Support explicitly implemented viewable content
+The system SHALL support only the viewable content formats that have an explicit implemented rendering or display path.
 
-#### Scenario: Caller wants to show a viewable artifact
-- **WHEN** a caller asks the system to show HTML, PDF, JavaScript output, TypeScript output, or another reasonably viewable artifact
-- **THEN** the system supports displaying that artifact through the Microcanvas viewer when feasible
+#### Scenario: Caller wants to show a supported artifact
+- **WHEN** a caller asks the system to show HTML, PDF, Markdown, or explicitly supported text/code artifacts
+- **THEN** the system supports displaying that artifact through the Microcanvas viewer
 
 #### Scenario: Artifact needs an explicit rendering path
 - **WHEN** a caller asks the system to show a format that is not directly displayable as-is
 - **THEN** the system either transforms it through a defined supported path or returns a clear unsupported-content result instead of pretending success
+
+#### Scenario: Unsupported artifact is rejected honestly
+- **WHEN** a caller asks the system to show an artifact with no implemented rendering or display path
+- **THEN** the system returns an `UNSUPPORTED_CONTENT` result
+- **AND** it does not claim the surface was shown successfully
 
 #### Scenario: Manifest records how the viewer should open content
 - **WHEN** the system materializes a supported artifact for display

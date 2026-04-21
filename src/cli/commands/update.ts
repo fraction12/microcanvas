@@ -60,13 +60,14 @@ export async function runUpdate(sourcePath?: string): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'update failed';
     const invalidInput = message.startsWith('INVALID_INPUT:');
+    const unsupported = message.startsWith('UNSUPPORTED_CONTENT:');
     printResult({
       ok: false,
-      code: invalidInput ? 'INVALID_INPUT' : 'UPDATE_NOT_SUPPORTED',
-      message: invalidInput ? message.replace(/^INVALID_INPUT:\s*/, '') : message,
+      code: unsupported ? 'UNSUPPORTED_CONTENT' : invalidInput ? 'INVALID_INPUT' : 'UPDATE_NOT_SUPPORTED',
+      message: (unsupported || invalidInput) ? message.replace(/^(INVALID_INPUT|UNSUPPORTED_CONTENT):\s*/, '') : message,
       surfaceId: null,
       viewer: { open: false },
-      lock: readLock(),
+      lock: { held: false },
       artifacts: {}
     });
   } finally {

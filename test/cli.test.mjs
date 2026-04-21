@@ -16,6 +16,7 @@ const snapshotsDir = path.join(runtimeRoot, 'snapshots');
 const fixtureDir = path.join(repoRoot, 'test', 'fixtures');
 const insideFile = path.join(fixtureDir, 'inside.md');
 const updateFile = path.join(fixtureDir, 'updated.md');
+const unsupportedFile = path.join(fixtureDir, 'unsupported.zip');
 const outsideFile = '/tmp/microcanvas-outside-test.txt';
 const viewerStateFile = path.join(runtimeRoot, 'viewer-state.json');
 const viewerRequestFile = path.join(runtimeRoot, 'viewer-request.json');
@@ -23,7 +24,7 @@ const viewerResponseFile = path.join(runtimeRoot, 'viewer-response.json');
 const stateFile = path.join(runtimeRoot, 'state.json');
 
 async function runCli(args) {
-  const { stdout } = await execFileAsync('node', [cliPath, ...args], { cwd: repoRoot });
+  const { stdout } = await execFileAsync('node', [cliPath, ...args, '--json'], { cwd: repoRoot });
   return JSON.parse(stdout);
 }
 
@@ -47,6 +48,7 @@ test.before(() => {
   fs.mkdirSync(fixtureDir, { recursive: true });
   fs.writeFileSync(insideFile, '# Hello\n\nInside root fixture.\n');
   fs.writeFileSync(updateFile, '# Updated\n\nNew content.\n');
+  fs.writeFileSync(unsupportedFile, 'not really a zip, but good enough for extension coverage\n');
   fs.writeFileSync(outsideFile, 'outside root\n');
 });
 
@@ -128,6 +130,13 @@ test('outside-root file is rejected as INVALID_INPUT', async () => {
   assert.equal(result.ok, false);
   assert.equal(result.code, 'INVALID_INPUT');
   assert.match(result.message, /Path escapes allowed roots/);
+});
+
+test('unsupported file types fail honestly with UNSUPPORTED_CONTENT', async () => {
+  const result = await runCli(['show', unsupportedFile]);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'UNSUPPORTED_CONTENT');
+  assert.match(result.message, /Supported today: html, md, pdf, txt, json, js, ts/);
 });
 
 test('status reports viewer open when heartbeat is fresh and pid is alive', async () => {

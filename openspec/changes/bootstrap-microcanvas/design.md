@@ -51,9 +51,10 @@ Microcanvas should be a lightweight standalone canvas runtime and viewer that co
    - Once the new surface is fully materialized and visible, the lock is released.
    - Read-style operations like snapshot or verify should not hold the write lock unless they require a mutation.
 
-4. **Broad content support without magical promises**
-   - v1 should support broad viewable artifacts, but only through explicit rendering/display paths that are actually implemented.
-   - "Anything viewable" means the system should be able to display files or generated output that the app knows how to open safely and predictably, not that it must interpret every possible file format natively.
+4. **Explicit content support, no magical promises**
+   - v1 should support only the artifact types that have an explicit implemented rendering or display path.
+   - In practice today, that means HTML, Markdown, PDF, and selected text/code files that are wrapped into an HTML surface.
+   - Unsupported formats should return `UNSUPPORTED_CONTENT` clearly instead of falling through to a fake or degraded success path.
 
 5. **CLI contract should be machine-friendly**
    - The CLI should produce stable success/error output that agents can parse reliably.

@@ -15,6 +15,12 @@ export interface RuntimeState {
   updatedAt: string;
 }
 
+export interface ViewerState {
+  pid: number;
+  lastSeenAt: string;
+  activeSurfaceId?: string | null;
+}
+
 export function createManifest(input: {
   surfaceId: string;
   title: string;

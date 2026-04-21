@@ -18,6 +18,12 @@ struct SurfaceManifest: Decodable {
     let renderMode: String
 }
 
+struct ViewerState: Codable {
+    let pid: Int32
+    let lastSeenAt: String
+    let activeSurfaceId: String?
+}
+
 @MainActor
 final class ViewerModel: ObservableObject {
     @Published var manifest: SurfaceManifest?
@@ -27,6 +33,11 @@ final class ViewerModel: ObservableObject {
     private let fileManager = FileManager.default
     private var timer: Timer?
     private var lastSeenUpdatedAt: String?
+    private let repoRootOverride: URL?
+
+    init(repoRootOverride: URL? = ViewerModel.resolveRepoRootOverride()) {
+        self.repoRootOverride = repoRootOverride
+    }
 
     func startPolling() {
         timer?.invalidate()
@@ -35,11 +46,13 @@ final class ViewerModel: ObservableObject {
                 self?.pollRuntimeState()
             }
         }
+        writeViewerState()
     }
 
     func stopPolling() {
         timer?.invalidate()
         timer = nil
+        removeViewerState()
     }
 
     func reload() {
@@ -54,6 +67,7 @@ final class ViewerModel: ObservableObject {
                 manifest = nil
                 activeURL = nil
                 statusText = "No active surface"
+                writeViewerState()
                 return
             }
 
@@ -64,10 +78,12 @@ final class ViewerModel: ObservableObject {
                 .appendingPathComponent("active", isDirectory: true)
                 .appendingPathComponent(decoded.entryPath, isDirectory: false)
             statusText = decoded.title
+            writeViewerState()
         } catch {
             manifest = nil
             activeURL = nil
             statusText = "Failed to load active surface: \(error.localizedDescription)"
+            writeViewerState()
         }
     }
 
@@ -79,6 +95,7 @@ final class ViewerModel: ObservableObject {
                 .appendingPathComponent("state.json", isDirectory: false)
 
             guard fileManager.fileExists(atPath: stateURL.path) else {
+                writeViewerState()
                 return
             }
 
@@ -87,13 +104,52 @@ final class ViewerModel: ObservableObject {
             if state.updatedAt != lastSeenUpdatedAt {
                 lastSeenUpdatedAt = state.updatedAt
                 reload()
+            } else {
+                writeViewerState()
             }
         } catch {
             statusText = "Failed to poll runtime state: \(error.localizedDescription)"
+            writeViewerState()
+        }
+    }
+
+    private func writeViewerState() {
+        do {
+            let repoRoot = try locateRepoRoot()
+            let runtimeRoot = repoRoot.appendingPathComponent("runtime", isDirectory: true)
+            try fileManager.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
+            let viewerStateURL = runtimeRoot.appendingPathComponent("viewer-state.json", isDirectory: false)
+            let state = ViewerState(
+                pid: ProcessInfo.processInfo.processIdentifier,
+                lastSeenAt: ISO8601DateFormatter().string(from: Date()),
+                activeSurfaceId: manifest?.surfaceId
+            )
+            let data = try JSONEncoder().encode(state)
+            try data.write(to: viewerStateURL)
+        } catch {
+            statusText = "Failed to write viewer state: \(error.localizedDescription)"
+        }
+    }
+
+    private func removeViewerState() {
+        do {
+            let repoRoot = try locateRepoRoot()
+            let viewerStateURL = repoRoot
+                .appendingPathComponent("runtime", isDirectory: true)
+                .appendingPathComponent("viewer-state.json", isDirectory: false)
+            if fileManager.fileExists(atPath: viewerStateURL.path) {
+                try fileManager.removeItem(at: viewerStateURL)
+            }
+        } catch {
+            statusText = "Failed to remove viewer state: \(error.localizedDescription)"
         }
     }
 
     private func locateRepoRoot() throws -> URL {
+        if let repoRootOverride {
+            return repoRootOverride
+        }
+
         var current = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
         while true {
             let packagePath = current.appendingPathComponent("package.json").path
@@ -107,5 +163,13 @@ final class ViewerModel: ObservableObject {
             }
             current = parent
         }
+    }
+
+    private static func resolveRepoRootOverride() -> URL? {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--repo-root"), arguments.indices.contains(index + 1) else {
+            return nil
+        }
+        return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
     }
 }

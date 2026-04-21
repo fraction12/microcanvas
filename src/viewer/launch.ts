@@ -3,6 +3,7 @@ import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { paths } from '../core/paths.js';
 import { readState, writeState } from '../core/state.js';
+import { getViewerOpenStatus } from './state.js';
 
 function viewerPackageDir(): string {
   return path.join(paths.repoRoot, 'apps', 'macos-viewer', 'MicrocanvasViewer');
@@ -54,7 +55,7 @@ function launchNativeViewerBinary(): boolean {
   }
 
   try {
-    const child = spawn(binary, [], {
+    const child = spawn(binary, ['--repo-root', paths.repoRoot], {
       cwd: paths.repoRoot,
       detached: true,
       stdio: 'ignore'
@@ -78,15 +79,16 @@ function openPath(entryPath: string): boolean {
 export async function launchViewer(entryPath?: string): Promise<{ open: boolean }> {
   const state = readState();
   const canOpen = Boolean(entryPath && fs.existsSync(entryPath));
-  const opened = canOpen && entryPath
+  const launched = canOpen && entryPath
     ? launchNativeViewerBinary() || openPath(entryPath)
     : false;
+  const open = launched || getViewerOpenStatus();
 
   writeState({
     ...state,
-    viewerOpen: opened,
+    viewerOpen: open,
     updatedAt: new Date().toISOString()
   });
 
-  return { open: opened };
+  return { open };
 }

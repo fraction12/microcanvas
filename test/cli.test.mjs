@@ -28,6 +28,11 @@ async function runCli(args) {
   return JSON.parse(stdout);
 }
 
+async function runCliText(args) {
+  const { stdout, stderr } = await execFileAsync('node', [cliPath, ...args], { cwd: repoRoot });
+  return { stdout, stderr };
+}
+
 function resetRuntime() {
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
   fs.mkdirSync(activeDir, { recursive: true });
@@ -212,4 +217,13 @@ test('requestViewerSnapshot writes request and resolves response handshake', asy
   const snapshotPath = await pending;
   assert.equal(snapshotPath, request.snapshotPath);
   assert.ok(fs.existsSync(snapshotPath));
+});
+
+test('human help output is command-aware', async () => {
+  const rootHelp = await runCliText(['--help']);
+  assert.match(rootHelp.stdout, /Usage:/);
+  assert.match(rootHelp.stdout, /show <path\|surfaceId>/);
+
+  const renderHelp = await runCliText(['render', '--help']);
+  assert.match(renderHelp.stdout, /Usage: microcanvas render <path>/);
 });

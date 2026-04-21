@@ -1,0 +1,6 @@
+name: expand-supported-surfaces
+status: proposed
+created: 2026-04-21
+owners:
+  - Dushyant Garg
+summary: Expand Microcanvas surface support through explicit adapter-based rendering/display paths, starting with images and table/data surfaces.

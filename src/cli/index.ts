@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { runRender } from './commands/render.js';
 import { runShow } from './commands/show.js';
+import { runSnapshot } from './commands/snapshot.js';
 import { runStatus } from './commands/status.js';
+import { runVerify } from './commands/verify.js';
 import { printResult } from '../core/results.js';
 
 const command = process.argv[2];
@@ -18,11 +20,17 @@ async function main(): Promise<void> {
     case 'show':
       await runShow(arg);
       break;
+    case 'verify':
+      runVerify();
+      break;
+    case 'snapshot':
+      runSnapshot();
+      break;
     default:
       printResult({
         ok: false,
         code: 'INVALID_INPUT',
-        message: 'expected one of: status, render, show',
+        message: 'expected one of: status, render, show, verify, snapshot',
         surfaceId: null,
         viewer: { open: false },
         lock: { held: false },

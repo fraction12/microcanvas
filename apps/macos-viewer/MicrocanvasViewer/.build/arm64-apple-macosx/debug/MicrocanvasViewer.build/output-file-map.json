@@ -1,0 +1,40 @@
+{
+  "": {
+    "swift-dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/master.swiftdeps"
+  },
+  "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/Sources/AppDelegate.swift": {
+    "dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/AppDelegate.d",
+    "object": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/AppDelegate.swift.o",
+    "swiftmodule": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/AppDelegate~partial.swiftmodule",
+    "swift-dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/AppDelegate.swiftdeps",
+    "diagnostics": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/AppDelegate.dia"
+  },
+  "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/Sources/ContentView.swift": {
+    "dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ContentView.d",
+    "object": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ContentView.swift.o",
+    "swiftmodule": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ContentView.swiftdeps",
+    "diagnostics": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ContentView.dia"
+  },
+  "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/Sources/MicrocanvasViewerApp.swift": {
+    "dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/MicrocanvasViewerApp.d",
+    "object": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/MicrocanvasViewerApp.swift.o",
+    "swiftmodule": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/MicrocanvasViewerApp~partial.swiftmodule",
+    "swift-dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/MicrocanvasViewerApp.swiftdeps",
+    "diagnostics": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/MicrocanvasViewerApp.dia"
+  },
+  "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/Sources/SurfaceView.swift": {
+    "dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/SurfaceView.d",
+    "object": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/SurfaceView.swift.o",
+    "swiftmodule": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/SurfaceView~partial.swiftmodule",
+    "swift-dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/SurfaceView.swiftdeps",
+    "diagnostics": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/SurfaceView.dia"
+  },
+  "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/Sources/ViewerModel.swift": {
+    "dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ViewerModel.d",
+    "object": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ViewerModel.swift.o",
+    "swiftmodule": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ViewerModel~partial.swiftmodule",
+    "swift-dependencies": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ViewerModel.swiftdeps",
+    "diagnostics": "/Volumes/MacSSD/Projects/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer.build/ViewerModel.dia"
+  }
+}

@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { getViewerOpenStatus } from '../dist/viewer/state.js';
 import { requestViewerSnapshot } from '../dist/viewer/snapshot.js';
 
+process.env.MICROCANVAS_NATIVE_VIEWER_PID = String(process.pid);
+
 const execFileAsync = promisify(execFile);
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(testDir, '..');
@@ -31,12 +33,26 @@ const viewerResponseFile = path.join(runtimeRoot, 'viewer-response.json');
 const stateFile = path.join(runtimeRoot, 'state.json');
 
 async function runCli(args) {
-  const { stdout } = await execFileAsync('node', [cliPath, ...args, '--json'], { cwd: repoRoot });
+  const { stdout } = await execFileAsync('node', [cliPath, ...args, '--json'], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      MICROCANVAS_DISABLE_NATIVE_VIEWER: '1',
+      MICROCANVAS_NATIVE_VIEWER_PID: String(process.pid)
+    }
+  });
   return JSON.parse(stdout);
 }
 
 async function runCliText(args) {
-  const { stdout, stderr } = await execFileAsync('node', [cliPath, ...args], { cwd: repoRoot });
+  const { stdout, stderr } = await execFileAsync('node', [cliPath, ...args], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      MICROCANVAS_DISABLE_NATIVE_VIEWER: '1',
+      MICROCANVAS_NATIVE_VIEWER_PID: String(process.pid)
+    }
+  });
   return { stdout, stderr };
 }
 
@@ -144,6 +160,12 @@ test('show renders and activates an inside-root markdown file with explicit view
   assert.equal(manifest.entryPath, 'index.html');
   assert.equal(manifest.renderMode, 'wkwebview');
   assert.ok(fs.existsSync(path.join(activeDir, 'index.html')));
+
+  const html = fs.readFileSync(path.join(activeDir, 'index.html'), 'utf8');
+  assert.match(html, /<main class="surface-shell">/);
+  assert.match(html, /<article class="surface-card">/);
+  assert.match(html, /color-scheme:\s*light;/);
+  assert.match(html, /color:\s*#17212b;/);
 });
 
 test('show renders and activates csv as a deterministic html table surface', async () => {
@@ -163,7 +185,10 @@ test('show renders and activates csv as a deterministic html table surface', asy
   assert.equal(manifest.contentType, 'text/html');
 
   const html = fs.readFileSync(path.join(activeDir, 'index.html'), 'utf8');
+  assert.match(html, /<main class="surface-shell surface-shell--table">/);
+  assert.match(html, /<div class="table-scroll">/);
   assert.match(html, /<table class="data-table">/);
+  assert.match(html, /color:\s*#17212b;/);
   assert.match(html, /<thead><tr><th scope="col">name<\/th><th scope="col">role<\/th><th scope="col">notes<\/th><\/tr><\/thead>/);
   assert.match(html, /<tbody><tr><td>Dushyant<\/td><td>owner<\/td><td>Keeps scope tight<\/td><\/tr>/);
   assert.match(html, /Uses &quot;escaped quotes&quot; cleanly/);
@@ -302,10 +327,12 @@ test('snapshot writes a snapshot artifact for the active surface when native vie
   }
 
   assert.ok(request);
+  assert.equal(request.expectedViewerPid, process.pid);
   fs.writeFileSync(request.snapshotPath, 'fake-png-data');
   fs.writeFileSync(viewerResponseFile, JSON.stringify({
     requestId: request.requestId,
     ok: true,
+    captureState: 'fresh',
     snapshotPath: request.snapshotPath,
     completedAt: new Date().toISOString()
   }, null, 2));
@@ -403,6 +430,51 @@ test('snapshot fails clearly when only degraded viewer mode is available', async
   assert.match(error.message, /native viewer|degraded/i);
 });
 
+test('snapshot succeeds with degraded capture readiness from a native viewer handshake', async () => {
+  const shown = await runCli(['show', insideFile]);
+  const shownRecord = expectSuccess(shown);
+
+  writeViewerState({
+    pid: process.pid,
+    lastSeenAt: new Date().toISOString(),
+    activeSurfaceId: shownRecord.surfaceId
+  });
+
+  const pending = runCli(['snapshot']);
+
+  let request;
+  for (let i = 0; i < 20; i += 1) {
+    if (fs.existsSync(viewerRequestFile)) {
+      request = JSON.parse(fs.readFileSync(viewerRequestFile, 'utf8'));
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  assert.ok(request);
+  fs.writeFileSync(request.snapshotPath, 'fake-png-data');
+  fs.writeFileSync(viewerResponseFile, JSON.stringify({
+    requestId: request.requestId,
+    ok: true,
+    captureState: 'degraded',
+    warning: 'Snapshot captured while capture readiness was degraded.',
+    snapshotPath: request.snapshotPath,
+    completedAt: new Date().toISOString()
+  }, null, 2));
+
+  const snapshot = await pending;
+  const record = expectSuccess(snapshot);
+  assert.equal(snapshot.verificationStatus, 'unverified');
+  assert.equal(record.surfaceId, shownRecord.surfaceId);
+  assert.equal(record.viewer.mode, 'native');
+  assert.equal(record.viewer.canVerify, true);
+  assert.ok(record.artifacts.snapshot);
+  assert.ok(fs.existsSync(record.artifacts.snapshot));
+  assert.ok((snapshot.warnings ?? []).length > 0);
+  assert.match((snapshot.warnings ?? []).join('\n'), /capture readiness was degraded/i);
+  assert.match(record.message, /capture readiness was degraded/i);
+});
+
 test('requestViewerSnapshot writes request and resolves response handshake', async () => {
   writeViewerState({
     pid: process.pid,
@@ -423,17 +495,21 @@ test('requestViewerSnapshot writes request and resolves response handshake', asy
 
   assert.ok(request);
   assert.equal(request.type, 'snapshot');
+  assert.equal(request.expectedViewerPid, process.pid);
   fs.writeFileSync(request.snapshotPath, 'fake-png-data');
   fs.writeFileSync(viewerResponseFile, JSON.stringify({
     requestId: request.requestId,
     ok: true,
+    captureState: 'fresh',
     snapshotPath: request.snapshotPath,
     completedAt: new Date().toISOString()
   }, null, 2));
 
-  const snapshotPath = await pending;
-  assert.equal(snapshotPath, request.snapshotPath);
-  assert.ok(fs.existsSync(snapshotPath));
+  const snapshot = await pending;
+  assert.equal(snapshot.snapshotPath, request.snapshotPath);
+  assert.equal(snapshot.captureState, 'fresh');
+  assert.equal(snapshot.warning, undefined);
+  assert.ok(fs.existsSync(snapshot.snapshotPath));
 });
 
 test('human help output is command-aware', async () => {

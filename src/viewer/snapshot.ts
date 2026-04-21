@@ -4,27 +4,46 @@ import crypto from 'node:crypto';
 import { paths } from '../core/paths.js';
 import { hasNativeViewerCapability } from './state.js';
 
+export type SnapshotCaptureState = 'fresh' | 'degraded';
+
 interface SnapshotRequest {
   type: 'snapshot';
   requestId: string;
   snapshotPath: string;
   surfaceId: string;
   requestedAt: string;
+  expectedViewerPid?: number;
 }
 
 interface SnapshotResponse {
   requestId: string;
   ok: boolean;
   snapshotPath?: string;
+  captureState?: SnapshotCaptureState;
+  warning?: string;
   error?: string;
   completedAt: string;
+}
+
+export interface ViewerSnapshot {
+  snapshotPath: string;
+  captureState: SnapshotCaptureState;
+  warning?: string;
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function requestViewerSnapshot(surfaceId: string, timeoutMs = 5000): Promise<string> {
+function expectedNativeViewerPid(): number | null {
+  const raw = process.env.MICROCANVAS_NATIVE_VIEWER_PID;
+  if (!raw) return null;
+
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+export async function requestViewerSnapshot(surfaceId: string, timeoutMs = 5000): Promise<ViewerSnapshot> {
   if (!hasNativeViewerCapability()) {
     throw new Error('native viewer-backed snapshot capability is unavailable');
   }
@@ -39,7 +58,8 @@ export async function requestViewerSnapshot(surfaceId: string, timeoutMs = 5000)
     requestId,
     snapshotPath,
     surfaceId,
-    requestedAt: new Date().toISOString()
+    requestedAt: new Date().toISOString(),
+    expectedViewerPid: expectedNativeViewerPid() ?? undefined
   };
 
   fs.rmSync(paths.viewerResponseFile, { force: true });
@@ -55,7 +75,11 @@ export async function requestViewerSnapshot(surfaceId: string, timeoutMs = 5000)
         if (!response.ok || !response.snapshotPath) {
           throw new Error(response.error ?? 'viewer snapshot failed');
         }
-        return response.snapshotPath;
+        return {
+          snapshotPath: response.snapshotPath,
+          captureState: response.captureState ?? 'fresh',
+          warning: response.warning
+        };
       }
     }
     await sleep(100);

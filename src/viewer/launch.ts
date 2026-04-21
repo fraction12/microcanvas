@@ -14,6 +14,10 @@ function viewerBinaryPath(): string {
   return path.join(viewerPackageDir(), '.build', 'arm64-apple-macosx', 'debug', 'MicrocanvasViewer');
 }
 
+function nativeViewerLaunchDisabled(): boolean {
+  return process.env.MICROCANVAS_DISABLE_NATIVE_VIEWER === '1';
+}
+
 function ensureNativeViewerBuilt(): boolean {
   const packageFile = path.join(viewerPackageDir(), 'Package.swift');
   if (!fs.existsSync(packageFile)) {
@@ -46,6 +50,10 @@ function isViewerRunning(binaryPath: string): boolean {
 }
 
 function launchNativeViewerBinary(): boolean {
+  if (nativeViewerLaunchDisabled()) {
+    return false;
+  }
+
   if (!ensureNativeViewerBuilt()) {
     return false;
   }
@@ -69,6 +77,10 @@ function launchNativeViewerBinary(): boolean {
 }
 
 function openPath(entryPath: string): boolean {
+  if (nativeViewerLaunchDisabled()) {
+    return false;
+  }
+
   try {
     execFileSync('open', [entryPath], { stdio: 'ignore' });
     return true;

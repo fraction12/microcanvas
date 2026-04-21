@@ -254,8 +254,23 @@ function renderCsvTable(title: string, raw: string): string {
     ? `<tbody>${bodyRows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody>`
     : '';
   const empty = normalizedRows.length === 0 ? '<p class="table-empty">CSV file is empty.</p>' : '';
+  const content = `${empty}<div class="table-scroll"><table class="data-table">${tableHeader}${tableBody}</table></div>`;
 
-  return buildHtmlDocument(title, `${empty}<table class="data-table">${tableHeader}${tableBody}</table>`);
+  return buildHtmlDocument(
+    title,
+    wrapSurfaceContent(content, { surfaceKind: 'table' })
+  );
+}
+
+function wrapSurfaceContent(content: string, options: { surfaceKind: 'generated' | 'table' }): string {
+  const shellClass = options.surfaceKind === 'table'
+    ? 'surface-shell surface-shell--table'
+    : 'surface-shell';
+  return `<main class="${shellClass}">
+  <article class="surface-card${options.surfaceKind === 'table' ? ' surface-card--table' : ''}">
+    ${content}
+  </article>
+</main>`;
 }
 
 function buildHtmlDocument(title: string, body: string): string {
@@ -267,17 +282,50 @@ function buildHtmlDocument(title: string, body: string): string {
     <title>${title}</title>
     <style>
       :root {
-        color-scheme: light dark;
+        color-scheme: light;
+        color: #17212b;
+      }
+      html {
+        background:
+          radial-gradient(circle at top left, rgba(108, 122, 137, 0.12), transparent 30%),
+          radial-gradient(circle at top right, rgba(108, 122, 137, 0.08), transparent 24%),
+          linear-gradient(180deg, rgba(127, 127, 127, 0.04), transparent 35%);
       }
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        max-width: 860px;
-        margin: 40px auto;
-        padding: 0 20px 60px;
+        margin: 0;
         line-height: 1.6;
+        min-height: 100vh;
+        color: #17212b;
       }
       pre, code {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .surface-shell {
+        max-width: 980px;
+        margin: 32px auto;
+        padding: 0 20px 56px;
+      }
+      .surface-card {
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(127, 127, 127, 0.22);
+        border-radius: 20px;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+        padding: 28px 32px 32px;
+        backdrop-filter: blur(8px);
+        color: #17212b;
+      }
+      .surface-card > :first-child {
+        margin-top: 0;
+      }
+      .surface-card > :last-child {
+        margin-bottom: 0;
+      }
+      .surface-shell--table {
+        max-width: 1120px;
+      }
+      .surface-card--table {
+        padding: 24px;
       }
       pre {
         padding: 16px;
@@ -287,21 +335,59 @@ function buildHtmlDocument(title: string, body: string): string {
       }
       table {
         width: 100%;
-        border-collapse: collapse;
-        margin: 24px 0;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin: 0;
       }
       th, td {
-        padding: 10px 12px;
-        border: 1px solid rgba(127, 127, 127, 0.3);
+        padding: 12px 14px;
+        border-right: 1px solid rgba(127, 127, 127, 0.24);
+        border-bottom: 1px solid rgba(127, 127, 127, 0.24);
         text-align: left;
         vertical-align: top;
+        background: rgba(255, 255, 255, 0.75);
+        color: #17212b;
       }
       th {
-        background: rgba(127, 127, 127, 0.12);
+        background: rgba(127, 127, 127, 0.1);
+        font-weight: 600;
+      }
+      thead th:first-child {
+        border-top-left-radius: 14px;
+      }
+      thead th:last-child {
+        border-top-right-radius: 14px;
+        border-right: 0;
+      }
+      tbody tr:last-child td:first-child {
+        border-bottom-left-radius: 14px;
+      }
+      tbody tr:last-child td:last-child {
+        border-bottom-right-radius: 14px;
+        border-right: 0;
+      }
+      tr > :last-child {
+        border-right: 0;
+      }
+      .table-scroll {
+        overflow-x: auto;
+        margin: 18px 0 0;
+        border: 1px solid rgba(127, 127, 127, 0.22);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.62);
+      }
+      .table-scroll > table {
+        min-width: 100%;
+        width: max-content;
+      }
+      .table-scroll th,
+      .table-scroll td {
+        white-space: nowrap;
       }
       .table-empty {
         font-style: italic;
         opacity: 0.8;
+        margin: 0 0 12px;
       }
       img {
         max-width: 100%;
@@ -321,7 +407,7 @@ async function materializeArtifact(resolvedSource: string, targetPath: string, d
     const rendered = await marked.parse(path.extname(resolvedSource).toLowerCase() === '.md' || path.extname(resolvedSource).toLowerCase() === '.markdown'
       ? raw
       : `\`\`\`\n${raw}\n\`\`\``);
-    const html = buildHtmlDocument(title, rendered);
+    const html = buildHtmlDocument(title, wrapSurfaceContent(rendered, { surfaceKind: 'generated' }));
     fs.writeFileSync(targetPath, html);
     return;
   }

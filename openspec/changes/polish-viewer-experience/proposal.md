@@ -12,6 +12,8 @@ This change focuses on viewer polish in three tight areas:
 2. Add clearer empty, fallback, and error states so the app feels intentional instead of accidental.
 3. Improve load/reload and snapshot confidence so captures and updates happen against visibly ready content.
 
+The first implementation slice for this change will start with load/reload and snapshot confidence for `WKWebView` surfaces. That slice will introduce a hybrid update path that keeps the last ready frame visible while refreshed web content loads, and it will make snapshot responses honest about whether the captured image is fresh or degraded.
+
 ## Non-goals
 
 - No multi-window or tabbed workspace model.
@@ -24,5 +26,6 @@ This change focuses on viewer polish in three tight areas:
 
 - Image and table surfaces feel noticeably more deliberate and readable.
 - Empty/fallback/error states are clear and intentional.
-- Snapshot behavior has stronger load-state confidence.
+- Snapshot behavior has stronger load-state confidence and native viewer captures remain visually trustworthy for image and `wkwebview` surfaces.
+- Manual native-viewer smoke on tracked fixtures produces readable snapshot PNG artifacts, with degraded or failed states surfaced explicitly when freshness cannot be guaranteed.
 - Viewer polish improves experience without distorting the small, deterministic product shape.

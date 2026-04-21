@@ -1,14 +1,17 @@
 import type { CommandResult } from 'agenttk';
+import { markUnverified } from 'agenttk';
 import fs from 'node:fs';
 import path from 'node:path';
 import { paths } from '../../core/paths.js';
 import { readState } from '../../core/state.js';
 import type { SurfaceManifest } from '../../core/manifest.js';
 import { requestViewerSnapshot } from '../../viewer/snapshot.js';
+import { getViewerState } from '../../viewer/state.js';
 import { operationalFailure, successResult, type MicrocanvasRecord } from '../contracts.js';
 
 export async function runSnapshot(): Promise<CommandResult<MicrocanvasRecord>> {
   const state = readState();
+  const viewer = getViewerState(state);
 
   if (!state.activeSurfaceId || !fs.existsSync(paths.activeManifest)) {
     return operationalFailure('snapshot', 'SURFACE_NOT_FOUND', 'no active surface to snapshot', {
@@ -29,29 +32,39 @@ export async function runSnapshot(): Promise<CommandResult<MicrocanvasRecord>> {
   }
 
   try {
-    const snapshotPath = await requestViewerSnapshot(manifest.surfaceId);
-    return successResult({
+    const snapshot = await requestViewerSnapshot(manifest.surfaceId);
+    const degraded = snapshot.captureState === 'degraded';
+    const result = successResult({
       type: 'snapshot',
       id: manifest.surfaceId,
-      verificationStatus: 'verified',
-      verified: true,
+      verificationStatus: degraded ? 'unverified' : 'verified',
+      verified: !degraded,
       record: {
-        message: 'snapshot captured',
+        message: degraded
+          ? 'snapshot captured, but capture readiness was degraded'
+          : 'snapshot captured',
         surfaceId: manifest.surfaceId,
         viewer: {
-          mode: 'native',
-          open: true,
-          canVerify: true
+          mode: viewer.mode,
+          open: viewer.open,
+          canVerify: viewer.verificationCapable
         },
         lock: {
           held: false
         },
         artifacts: {
           primary: sourcePath,
-          snapshot: snapshotPath
+          snapshot: snapshot.snapshotPath
         }
-      }
+      },
+      warnings: degraded
+        ? [snapshot.warning ?? 'Snapshot captured while capture readiness was degraded.']
+        : undefined
     });
+
+    return degraded
+      ? markUnverified(result, { status: 'unverified', nextAction: 'verify_state' })
+      : result;
   } catch (error) {
     return operationalFailure('snapshot', 'VERIFY_FAILED', error instanceof Error ? error.message : 'snapshot failed', {
       classification: 'unknown',

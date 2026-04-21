@@ -9,6 +9,14 @@ import {
 import { paths } from '../core/paths.js';
 import { readState } from '../core/state.js';
 
+function expectedNativeViewerPid(): number | null {
+  const raw = process.env.MICROCANVAS_NATIVE_VIEWER_PID;
+  if (!raw) return null;
+
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
 export interface ViewerRuntimeState {
   pid: number;
   lastSeenAt: string;
@@ -47,6 +55,11 @@ function createViewerState(mode: ViewerState['mode'], details: Partial<ViewerSta
 function getNativeViewerState(maxAgeMs = 5000): ViewerState | null {
   const state = readViewerRuntimeState();
   if (!state) return null;
+
+  const expectedPid = expectedNativeViewerPid();
+  if (expectedPid !== null && state.pid !== expectedPid) {
+    return null;
+  }
 
   const ageMs = Date.now() - Date.parse(state.lastSeenAt);
   if (!Number.isFinite(ageMs) || ageMs > maxAgeMs) return null;

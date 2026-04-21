@@ -1,0 +1,4 @@
+name,role,notes,really_long_column,another_column
+Dushyant,owner,Keeps scope tight,This is a deliberately long cell to force horizontal overflow handling in the viewer shell,alpha
+Ada,reviewer,Checks semantics before polish,Another long value to check spacing and table readability,beta
+Grace,observer,Looks for confidence issues,Yet another long cell to verify scroll framing,gamma

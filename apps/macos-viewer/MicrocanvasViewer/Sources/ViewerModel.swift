@@ -31,12 +31,15 @@ struct SnapshotRequest: Decodable {
     let snapshotPath: String
     let surfaceId: String
     let requestedAt: String
+    let expectedViewerPid: Int32?
 }
 
 struct SnapshotResponse: Encodable {
     let requestId: String
     let ok: Bool
     let snapshotPath: String?
+    let captureState: String?
+    let warning: String?
     let error: String?
     let completedAt: String
 }
@@ -45,13 +48,30 @@ struct SnapshotResponse: Encodable {
 final class ViewerModel: ObservableObject {
     @Published var manifest: SurfaceManifest?
     @Published var activeURL: URL?
+    @Published var pendingManifest: SurfaceManifest?
+    @Published var pendingURL: URL?
     @Published var statusText: String = "No active surface"
+    @Published var loadFailureMessage: String?
+    @Published private(set) var readiness = ViewerReadinessCoordinator()
 
     private let fileManager = FileManager.default
     private var timer: Timer?
     private var lastSeenUpdatedAt: String?
     private var lastSnapshotRequestId: String?
     private let repoRootOverride: URL?
+
+    var overlayMessage: String? {
+        readiness.overlayMessage
+    }
+
+    var presentation: ViewerPresentation {
+        ViewerPresentation(
+            manifest: manifest,
+            activeURL: activeURL,
+            statusText: statusText,
+            loadFailureMessage: loadFailureMessage
+        )
+    }
 
     init(repoRootOverride: URL? = ViewerModel.resolveRepoRootOverride()) {
         self.repoRootOverride = repoRootOverride
@@ -84,6 +104,10 @@ final class ViewerModel: ObservableObject {
             guard fileManager.fileExists(atPath: manifestURL.path) else {
                 manifest = nil
                 activeURL = nil
+                pendingManifest = nil
+                pendingURL = nil
+                loadFailureMessage = nil
+                readiness = ViewerReadinessCoordinator()
                 statusText = "No active surface"
                 writeViewerState()
                 return
@@ -91,18 +115,86 @@ final class ViewerModel: ObservableObject {
 
             let data = try Data(contentsOf: manifestURL)
             let decoded = try JSONDecoder().decode(SurfaceManifest.self, from: data)
-            manifest = decoded
-            activeURL = runtimeRoot
+            let resolvedURL = runtimeRoot
                 .appendingPathComponent("active", isDirectory: true)
                 .appendingPathComponent(decoded.entryPath, isDirectory: false)
-            statusText = decoded.title
+            if !fileManager.fileExists(atPath: resolvedURL.path) {
+                manifest = decoded
+                activeURL = nil
+                pendingManifest = nil
+                pendingURL = nil
+                loadFailureMessage = nil
+                readiness = ViewerReadinessCoordinator()
+                statusText = "Active surface entry is missing"
+                writeViewerState()
+                return
+            }
+            let shouldStageWKWebReload = decoded.renderMode == "wkwebview"
+                && manifest?.renderMode == "wkwebview"
+                && activeURL != nil
+
+            loadFailureMessage = nil
+            if shouldStageWKWebReload {
+                pendingManifest = decoded
+                pendingURL = resolvedURL
+                readiness.beginReload(surfaceId: decoded.surfaceId, revision: decoded.updatedAt)
+                statusText = "Updating \(decoded.title)"
+            } else {
+                manifest = decoded
+                activeURL = resolvedURL
+                pendingManifest = nil
+                pendingURL = nil
+                if decoded.renderMode == "wkwebview" {
+                    readiness.beginReload(surfaceId: decoded.surfaceId, revision: decoded.updatedAt)
+                    statusText = "Loading \(decoded.title)"
+                } else {
+                    readiness = ViewerReadinessCoordinator()
+                    statusText = decoded.title
+                }
+            }
             writeViewerState()
         } catch {
             manifest = nil
             activeURL = nil
-            statusText = "Failed to load active surface: \(error.localizedDescription)"
+            pendingManifest = nil
+            pendingURL = nil
+            readiness = ViewerReadinessCoordinator()
+            statusText = "Viewer error"
+            loadFailureMessage = error.localizedDescription
             writeViewerState()
         }
+    }
+
+    func handleWebSurfaceReady(surfaceId: String, revision: String) -> Bool {
+        guard readiness.didPresentReadySurface(surfaceId: surfaceId, revision: revision) else {
+            return false
+        }
+
+        if let pendingManifest,
+           let pendingURL,
+           pendingManifest.surfaceId == surfaceId,
+           pendingManifest.updatedAt == revision {
+            manifest = pendingManifest
+            activeURL = pendingURL
+            self.pendingManifest = nil
+            self.pendingURL = nil
+        }
+
+        loadFailureMessage = nil
+        statusText = manifest?.title ?? "Surface ready"
+        writeViewerState()
+        return true
+    }
+
+    func handleWebSurfaceLoadFailure(surfaceId: String, revision: String, description: String) {
+        guard let pendingManifest,
+              pendingManifest.surfaceId == surfaceId,
+              pendingManifest.updatedAt == revision else {
+            return
+        }
+
+        statusText = "Failed to load updated surface: \(description)"
+        writeViewerState()
     }
 
     private func pollRuntimeState() {
@@ -145,54 +237,147 @@ final class ViewerModel: ObservableObject {
             guard request.type == "snapshot" else {
                 return
             }
+            if let expectedViewerPid = request.expectedViewerPid,
+               expectedViewerPid != ProcessInfo.processInfo.processIdentifier {
+                return
+            }
             guard request.requestId != lastSnapshotRequestId else {
                 return
             }
             lastSnapshotRequestId = request.requestId
-
-            let response: SnapshotResponse
-            if let window = AppDelegate.sharedWindow {
-                let snapshotURL = URL(fileURLWithPath: request.snapshotPath, isDirectory: false)
-                try fileManager.createDirectory(at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try capture(window: window, to: snapshotURL)
-                response = SnapshotResponse(
-                    requestId: request.requestId,
-                    ok: true,
-                    snapshotPath: snapshotURL.path,
-                    error: nil,
-                    completedAt: ISO8601DateFormatter().string(from: Date())
-                )
-            } else {
-                response = SnapshotResponse(
-                    requestId: request.requestId,
-                    ok: false,
-                    snapshotPath: nil,
-                    error: "viewer window is unavailable",
-                    completedAt: ISO8601DateFormatter().string(from: Date())
-                )
-            }
-
-            let responseData = try JSONEncoder().encode(response)
-            try responseData.write(to: responseURL)
         } catch {
             let fallback = SnapshotResponse(
                 requestId: lastSnapshotRequestId ?? "unknown",
                 ok: false,
                 snapshotPath: nil,
+                captureState: nil,
+                warning: nil,
                 error: error.localizedDescription,
                 completedAt: ISO8601DateFormatter().string(from: Date())
             )
             if let responseData = try? JSONEncoder().encode(fallback) {
                 try? responseData.write(to: responseURL)
             }
+            return
+        }
+
+        Task { @MainActor in
+            let response = await self.snapshotResponse(for: runtimeRoot)
+            if let responseData = try? JSONEncoder().encode(response) {
+                try? responseData.write(to: responseURL)
+            }
         }
     }
 
-    private func capture(window: NSWindow, to url: URL) throws {
-        guard let image = window.contentView?.bitmapImageRepForCachingDisplay(in: window.contentView?.bounds ?? .zero) else {
-            throw NSError(domain: "MicrocanvasViewer", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unable to allocate bitmap for snapshot"])
+    private func snapshotResponse(for runtimeRoot: URL) async -> SnapshotResponse {
+        let requestURL = runtimeRoot.appendingPathComponent("viewer-request.json", isDirectory: false)
+
+        do {
+            let data = try Data(contentsOf: requestURL)
+            let request = try JSONDecoder().decode(SnapshotRequest.self, from: data)
+
+            guard let window = AppDelegate.sharedWindow else {
+                return SnapshotResponse(
+                    requestId: request.requestId,
+                    ok: false,
+                    snapshotPath: nil,
+                    captureState: nil,
+                    warning: nil,
+                    error: "viewer window is unavailable",
+                    completedAt: ISO8601DateFormatter().string(from: Date())
+                )
+            }
+
+            let outcome = await waitForSnapshotOutcome(surfaceId: request.surfaceId)
+            let snapshotURL = URL(fileURLWithPath: request.snapshotPath, isDirectory: false)
+
+            switch outcome {
+            case .failedNoVisibleFrame:
+                return SnapshotResponse(
+                    requestId: request.requestId,
+                    ok: false,
+                    snapshotPath: nil,
+                    captureState: nil,
+                    warning: nil,
+                    error: "viewer has no visible frame to capture",
+                    completedAt: ISO8601DateFormatter().string(from: Date())
+                )
+            case .fresh:
+                try fileManager.createDirectory(at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try capture(window: window, to: snapshotURL)
+                return SnapshotResponse(
+                    requestId: request.requestId,
+                    ok: true,
+                    snapshotPath: snapshotURL.path,
+                    captureState: "fresh",
+                    warning: nil,
+                    error: nil,
+                    completedAt: ISO8601DateFormatter().string(from: Date())
+                )
+            case .degraded(let warning):
+                try fileManager.createDirectory(at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try capture(window: window, to: snapshotURL)
+                return SnapshotResponse(
+                    requestId: request.requestId,
+                    ok: true,
+                    snapshotPath: snapshotURL.path,
+                    captureState: "degraded",
+                    warning: warning,
+                    error: nil,
+                    completedAt: ISO8601DateFormatter().string(from: Date())
+                )
+            }
+        } catch {
+            return SnapshotResponse(
+                requestId: lastSnapshotRequestId ?? "unknown",
+                ok: false,
+                snapshotPath: nil,
+                captureState: nil,
+                warning: nil,
+                error: error.localizedDescription,
+                completedAt: ISO8601DateFormatter().string(from: Date())
+            )
         }
-        window.contentView?.cacheDisplay(in: window.contentView?.bounds ?? .zero, to: image)
+    }
+
+    private func waitForSnapshotOutcome(surfaceId: String) async -> ViewerReadinessCoordinator.SnapshotOutcome {
+        if manifest?.renderMode != "wkwebview" {
+            return activeURL == nil ? .failedNoVisibleFrame : .fresh
+        }
+
+        if let immediate = readiness.immediateSnapshotOutcome(for: surfaceId) {
+            return immediate
+        }
+
+        let timeoutNs: UInt64 = 2_000_000_000
+        let stepNs: UInt64 = 100_000_000
+        var elapsedNs: UInt64 = 0
+
+        while elapsedNs < timeoutNs {
+            try? await Task.sleep(nanoseconds: stepNs)
+            elapsedNs += stepNs
+
+            if let immediate = readiness.immediateSnapshotOutcome(for: surfaceId) {
+                return immediate
+            }
+        }
+
+        return readiness.markTimedOutSnapshot()
+    }
+
+    private func capture(window: NSWindow, to url: URL) throws {
+        let windowID = CGWindowID(window.windowNumber)
+        let bounds = window.frame
+        guard let cgImage = CGWindowListCreateImage(
+            bounds,
+            .optionIncludingWindow,
+            windowID,
+            [.boundsIgnoreFraming, .bestResolution]
+        ) else {
+            throw NSError(domain: "MicrocanvasViewer", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unable to capture window image for snapshot"])
+        }
+
+        let image = NSBitmapImageRep(cgImage: cgImage)
         guard let pngData = image.representation(using: .png, properties: [:]) else {
             throw NSError(domain: "MicrocanvasViewer", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unable to encode snapshot as PNG"])
         }

@@ -13,6 +13,11 @@ let package = Package(
         .executableTarget(
             name: "MicrocanvasViewer",
             path: "Sources"
+        ),
+        .testTarget(
+            name: "MicrocanvasViewerTests",
+            dependencies: ["MicrocanvasViewer"],
+            path: "Tests/MicrocanvasViewerTests"
         )
     ]
 )

@@ -28,15 +28,25 @@ function colorsFor(mode: PresentationMode) {
 
 function formatLabel(text: string): string {
   return text
-    .split('_')
+    .split(/[_-]/)
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(' ');
 }
 
-function formatValue(value: unknown): string {
+type ValueStyle = 'default' | 'humanized';
+
+function formatHumanValue(value: string): string {
+  return value.replace(/[_-]+/g, ' ');
+}
+
+function formatValue(value: unknown, style: ValueStyle = 'default'): string {
   if (typeof value === 'boolean') {
     return value ? 'yes' : 'no';
+  }
+
+  if (typeof value === 'string' && style === 'humanized') {
+    return formatHumanValue(value);
   }
 
   return String(value);
@@ -64,12 +74,12 @@ function buildQuickStartExamples(record: Extract<HelpRecord, { kind: 'tool' }>):
   return ordered.slice(0, 3).map((name) => commandExample(record.name, name));
 }
 
-function pushKeyValue(lines: string[], label: string, value: unknown): void {
+function pushKeyValue(lines: string[], label: string, value: unknown, style: ValueStyle = 'default'): void {
   if (value === undefined || value === null || value === '') {
     return;
   }
 
-  lines.push(`${label}: ${formatValue(value)}`);
+  lines.push(`${label}: ${formatValue(value, style)}`);
 }
 
 function renderWarnings(lines: string[], warnings: string[] | undefined, mode: PresentationMode): void {
@@ -105,7 +115,7 @@ function renderSuccess(result: Extract<CommandResult<MicrocanvasRecord>, { ok: t
   pushKeyValue(lines, 'Lock reason', record?.lock?.reason);
   pushKeyValue(lines, 'Primary', record?.artifacts?.primary);
   pushKeyValue(lines, 'Snapshot', record?.artifacts?.snapshot);
-  pushKeyValue(lines, 'Verification', result.verificationStatus);
+  pushKeyValue(lines, 'Verification', result.verificationStatus, 'humanized');
 
   renderWarnings(lines, result.warnings, mode);
 
@@ -120,10 +130,10 @@ function renderFailure(result: CommandFailure, mode: PresentationMode): string {
 
   pushKeyValue(lines, 'Code', result.error.code);
   pushKeyValue(lines, 'Reason', reason);
-  pushKeyValue(lines, 'Classification', result.classification);
+  pushKeyValue(lines, 'Classification', result.classification, 'humanized');
   pushKeyValue(lines, 'Retryable', result.retryable);
-  pushKeyValue(lines, 'Next', result.nextAction);
-  pushKeyValue(lines, 'Verification', result.verificationStatus);
+  pushKeyValue(lines, 'Next', result.nextAction, 'humanized');
+  pushKeyValue(lines, 'Verification', result.verificationStatus, 'humanized');
 
   return lines.join('\n');
 }

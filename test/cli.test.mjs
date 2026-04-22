@@ -639,7 +639,55 @@ test('human status output uses presenter details', async () => {
   assert.match(status.stdout, /Verify ready: no/);
   assert.match(status.stdout, /Lock held: no/);
   assert.ok(status.stdout.includes(`Primary: ${path.join(activeDir, 'index.html')}`));
-  assert.match(status.stdout, /Verification: not_applicable/);
+  assert.match(status.stdout, /Verification: not applicable/);
+  assert.doesNotMatch(status.stdout, /Verification: not_applicable/);
+});
+
+test('human show output surfaces warnings through the shared presenter', async () => {
+  const show = await runCliText(['show', insideFile]);
+
+  assert.equal(show.stderr, '');
+  assert.match(show.stdout, /OK Show/);
+  assert.match(show.stdout, /Viewer: closed/);
+  assert.match(show.stdout, /Verification: not applicable/);
+  assert.match(show.stdout, /Warning: Surface was activated, but no viewer session could be opened\./);
+});
+
+test('human verify failure output stays readable for operators', async () => {
+  writeRuntimeState({
+    activeSurfaceId: 'surface-verify',
+    viewerMode: 'degraded',
+    viewerOpen: true,
+    updatedAt: new Date().toISOString()
+  });
+  writeActiveManifest('surface-verify');
+  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>degraded</body></html>');
+
+  const verify = await runCliText(['verify']);
+
+  assert.equal(verify.stdout, '');
+  assert.match(verify.stderr, /ERR Verify failed/);
+  assert.match(verify.stderr, /Code: VERIFY_FAILED/);
+  assert.match(verify.stderr, /Reason: native viewer confirmation is unavailable while the runtime is in degraded display mode/);
+  assert.match(verify.stderr, /Classification: unknown/);
+  assert.match(verify.stderr, /Retryable: yes/);
+  assert.match(verify.stderr, /Next: verify state/);
+  assert.match(verify.stderr, /Verification: verification failed/);
+  assert.doesNotMatch(verify.stderr, /Next: verify_state/);
+  assert.doesNotMatch(verify.stderr, /Verification: verification_failed/);
+});
+
+test('human input failures humanize user action required classification', async () => {
+  const failure = await runCliText(['show', outsideFile]);
+
+  assert.equal(failure.stdout, '');
+  assert.match(failure.stderr, /ERR Show/);
+  assert.match(failure.stderr, /Code: INVALID_INPUT/);
+  assert.match(failure.stderr, /Reason: Path escapes allowed roots/);
+  assert.match(failure.stderr, /Classification: user action required/);
+  assert.match(failure.stderr, /Next: fix input/);
+  assert.doesNotMatch(failure.stderr, /Classification: user_action_required/);
+  assert.doesNotMatch(failure.stderr, /Next: fix_input/);
 });
 
 test('human unknown command writes the failure presentation to stderr', async () => {

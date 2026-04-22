@@ -541,9 +541,112 @@ test('requestViewerSnapshot tolerates a transient malformed viewer response', as
 
 test('human help output is command-aware', async () => {
   const rootHelp = await runCliText(['--help']);
+  assert.equal(rootHelp.stderr, '');
   assert.match(rootHelp.stdout, /microcanvas/);
+  assert.match(rootHelp.stdout, /tiny stagehand for AI tools/i);
+  assert.match(rootHelp.stdout, /Try first:/);
+  assert.match(rootHelp.stdout, /microcanvas show README\.md/);
   assert.match(rootHelp.stdout, /show - Activate a staged surface or render and show a source file/);
 
   const renderHelp = await runCliText(['render', '--help']);
+  assert.equal(renderHelp.stderr, '');
+  assert.match(renderHelp.stdout, /^microcanvas render$/m);
   assert.match(renderHelp.stdout, /Usage: microcanvas render <path>/);
+  assert.match(renderHelp.stdout, /Examples:/);
+  assert.match(renderHelp.stdout, /microcanvas render README\.md --json/);
+});
+
+test('json help output preserves AgentTK-compatible tool and command envelopes', async () => {
+  const rootHelp = await runCli(['--help']);
+  assert.deepEqual(rootHelp, {
+    ok: true,
+    type: 'help',
+    record: {
+      kind: 'tool',
+      name: 'microcanvas',
+      description: 'A lightweight, agent-friendly canvas runtime and native viewer.',
+      commands: [
+        {
+          name: 'render',
+          description: 'Render a supported source file into staging.'
+        },
+        {
+          name: 'show',
+          description: 'Activate a staged surface or render and show a source file.'
+        },
+        {
+          name: 'update',
+          description: 'Update the active surface from a supported source file.'
+        },
+        {
+          name: 'snapshot',
+          description: 'Capture a real PNG snapshot from the native viewer.'
+        },
+        {
+          name: 'verify',
+          description: 'Verify active surface files and viewer runtime state.'
+        },
+        {
+          name: 'status',
+          description: 'Report runtime, lock, and viewer state.'
+        }
+      ]
+    }
+  });
+
+  const commandHelp = await runCli(['render', '--help']);
+  assert.deepEqual(commandHelp, {
+    ok: true,
+    type: 'help',
+    record: {
+      kind: 'command',
+      toolName: 'microcanvas',
+      name: 'render',
+      description: 'Render a supported source file into staging.',
+      usage: 'microcanvas render <path> [--json]',
+      examples: ['microcanvas render README.md', 'microcanvas render README.md --json']
+    }
+  });
+});
+
+test('json unknown command output preserves the failure envelope', async () => {
+  const failure = await runCli(['nope']);
+  assert.deepEqual(failure, {
+    ok: false,
+    error: {
+      code: 'UNKNOWN_COMMAND',
+      message: 'Unknown command: nope'
+    }
+  });
+});
+
+test('human status output uses presenter details', async () => {
+  writeRuntimeState({
+    activeSurfaceId: 'surface-human',
+    viewerMode: 'degraded',
+    updatedAt: new Date().toISOString()
+  });
+  writeActiveManifest('surface-human');
+
+  const status = await runCliText(['status']);
+
+  assert.equal(status.stderr, '');
+  assert.match(status.stdout, /OK Status/);
+  assert.match(status.stdout, /Surface: surface-human/);
+  assert.match(status.stdout, /Message: runtime state loaded/);
+  assert.match(status.stdout, /Viewer: degraded/);
+  assert.match(status.stdout, /Viewer open: yes/);
+  assert.match(status.stdout, /Verify ready: no/);
+  assert.match(status.stdout, /Lock held: no/);
+  assert.ok(status.stdout.includes(`Primary: ${path.join(activeDir, 'index.html')}`));
+  assert.match(status.stdout, /Verification: not_applicable/);
+});
+
+test('human unknown command writes the failure presentation to stderr', async () => {
+  const failure = await runCliText(['nope']);
+
+  assert.equal(failure.stdout, '');
+  assert.match(failure.stderr, /ERR Unknown Command/);
+  assert.match(failure.stderr, /Code: UNKNOWN_COMMAND/);
+  assert.match(failure.stderr, /Reason: Unknown command: nope/);
 });

@@ -2,36 +2,163 @@
 
 # microcanvas
 
-A lightweight, reliable canvas runtime and viewer for AI coding tools.
+![stage: early](https://img.shields.io/badge/stage-early-orange)
+![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)
+![platform: macOS-first](https://img.shields.io/badge/platform-macOS--first-blue)
+![focus: AI tooling](https://img.shields.io/badge/focus-AI%20tooling-teal)
 
-Microcanvas is a standalone, tool-agnostic canvas tool that covers the same core job as OpenClaw Canvas, but in a smaller, more predictable form. Agents call Microcanvas like any other tool. Microcanvas owns rendering, activation, verification, and viewer-backed snapshots.
+Microcanvas is a tiny stagehand for AI tools: it renders supported files, opens them in a viewer, keeps track of the active surface, and helps agents verify what they are showing.
 
-## What works today
+It is usable today, still early-stage, and very happy to hold the curtain open while your tool says, "Would you like me to show it on Microcanvas?"
 
-- `render` renders a supported source into staging
-- `show` activates a surface and prefers the native Microcanvas viewer, while still supporting degraded external-open fallback when the native viewer is unavailable
-- `update` refreshes the active surface while preserving surface identity and reporting whether the runtime is native-capable or degraded
-- `status` reports runtime state, active artifacts, viewer mode, and whether native verification is currently possible
-- `verify` checks active surface files plus native-viewer-backed evidence for the active surface
-- `snapshot` captures a real PNG from the native viewer window when native viewer capability is available
+## Why Microcanvas Exists
 
-## CLI contract
+Most coding agents eventually need the same thing: a predictable place to render a file, open it, update it, inspect runtime state, and grab evidence that the right thing is on screen.
 
-Microcanvas now treats AgentTK as the canonical CLI/result layer. JSON output is no longer the old custom top-level `code/message/viewer/lock/artifacts` object.
+Microcanvas exists to do that job cleanly.
+
+- Render a source file into a surface
+- Show the active surface in a native viewer when available
+- Update the active surface without losing identity
+- Report runtime and viewer state in a tool-friendly way
+- Verify or snapshot the active surface when native viewer capability is present
+
+This repo is intentionally focused. It is not trying to be a full document suite, a browser automation framework, or a giant cross-platform GUI toolkit.
+
+## What The Claws Can Do Today
+
+- `render` stages a supported source into a Microcanvas surface
+- `show` activates a surface and opens it, preferring the native Microcanvas viewer
+- `update` refreshes the active surface while keeping surface identity intact
+- `status` reports runtime state, active artifact, lock state, and viewer capability
+- `verify` checks active files plus native-viewer-backed confirmation for the active surface
+- `snapshot` captures a real PNG from the native viewer when snapshot capability is available
+
+## Take It For A Spin
+
+Microcanvas is currently set up to run from source.
+
+```bash
+npm install
+npm run build
+node dist/cli/index.js show README.md
+node dist/cli/index.js status --json
+```
+
+That gives you the happy-path tour:
+
+- `show README.md` opens this README as the active surface
+- `status --json` reports the runtime and viewer state in a tool-friendly format
+
+Once a surface is active, the next useful moves are:
+
+```bash
+node dist/cli/index.js update README.md
+node dist/cli/index.js verify --json
+node dist/cli/index.js snapshot --json
+```
+
+## Quick Command Tour
+
+### Show Something Off
+
+```bash
+node dist/cli/index.js show path/to/file.md
+node dist/cli/index.js show path/to/file.png
+node dist/cli/index.js show path/to/file.csv --json
+```
+
+Use `show` when you want Microcanvas to render if needed, activate the result, and open it.
+
+### Stage Without Opening
+
+```bash
+node dist/cli/index.js render path/to/file.md --json
+```
+
+Use `render` when you want a staged surface artifact without activating it yet.
+
+### Refresh The Active Surface
+
+```bash
+node dist/cli/index.js update path/to/file.md --json
+```
+
+Use `update` when a surface is already active and you want to refresh it in place.
+
+### Ask What Is Going On
+
+```bash
+node dist/cli/index.js status --json
+node dist/cli/index.js verify --json
+```
+
+Use `status` for inspection. Use `verify` when you need strict confirmation that the active surface and viewer state line up.
+
+### Grab A Snapshot
+
+```bash
+node dist/cli/index.js snapshot --json
+```
+
+When native snapshot capability is available, Microcanvas writes a real PNG snapshot and reports its path in the command result.
+
+## Supported Content
+
+Microcanvas is deliberately honest about what it can display today.
+
+Supported now:
+
+- `.html`, `.htm`
+- `.md`, `.markdown`
+- `.pdf`
+- `.csv` rendered into a deterministic HTML table surface
+- `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
+- `.txt`, `.json`, `.js`, `.ts` wrapped into an HTML code-view surface
+
+Not supported yet:
+
+- arbitrary binary artifacts
+- archives like `.zip`
+- `.svg` and other image-like formats without an explicit display path
+- office docs and other formats without an explicit render/display path
+
+If a file type is not supported, Microcanvas returns `UNSUPPORTED_CONTENT` instead of pretending everything is fine.
+
+## Viewer Modes
+
+Microcanvas separates "something opened" from "the native viewer is fully available."
+
+- `native`: the Microcanvas viewer is available and can satisfy `verify` and `snapshot`
+- `degraded`: the active artifact opened through an external fallback path, but native verification and snapshot flows are unavailable
+- `closed`: there is no confirmed viewer session
+
+This matters in practice:
+
+- `show` and `update` can still succeed in degraded mode
+- `status` tells you what kind of runtime/viewer state you currently have
+- `verify` stays strict and requires native viewer-backed confirmation
+- `snapshot` is strongest when native capture capability is available
+
+## JSON Contract
+
+Microcanvas treats AgentTK as the canonical CLI/result layer.
 
 Success responses return:
+
 - `ok: true`
-- `record`: Microcanvas-specific runtime data such as `surfaceId`, active artifact paths, lock state, and viewer mode
-- `warnings`: optional warnings, especially when a command succeeds in degraded mode
-- `verificationStatus`: whether the result is viewer-verified or unverified
+- `record`: Microcanvas runtime data such as `surfaceId`, artifact paths, lock state, and viewer mode
+- `warnings`: optional warnings, especially for degraded-mode success
+- `verificationStatus`: whether the result is verified, unverified, or not applicable
 - `nextAction`: optional follow-up guidance when the result is useful but not fully verifiable
 
 Failure responses return:
+
 - `ok: false`
-- `error.code`: stable domain code such as `INVALID_INPUT`, `UNSUPPORTED_CONTENT`, `LOCKED_TRY_LATER`, `SURFACE_NOT_FOUND`, `UPDATE_NOT_SUPPORTED`, or `VERIFY_FAILED`
+- `error.code`: stable domain codes such as `INVALID_INPUT`, `UNSUPPORTED_CONTENT`, `LOCKED_TRY_LATER`, `SURFACE_NOT_FOUND`, `UPDATE_NOT_SUPPORTED`, or `VERIFY_FAILED`
 - `error.message`: human-readable failure detail
 
-Example success envelope from degraded `show`:
+Example degraded `show` response:
 
 ```json
 {
@@ -58,54 +185,22 @@ Example success envelope from degraded `show`:
 }
 ```
 
-Example failure envelope from degraded `verify`:
+Example degraded `verify` failure:
 
 ```json
 {
   "ok": false,
   "error": {
     "code": "VERIFY_FAILED",
-    "message": "Native viewer-backed verification is unavailable while viewer mode is degraded."
+    "message": "Native viewer confirmation is unavailable while the runtime is in degraded display mode"
   }
 }
 ```
 
-## Viewer modes
-
-Microcanvas distinguishes between viewer display success and native viewer-backed capability.
-
-- `native`: the Microcanvas viewer is confirmed available and can satisfy heartbeat-backed `verify` and `snapshot`
-- `degraded`: the active artifact was opened through an external OS fallback, but native viewer-backed verification and snapshot flows are unavailable
-- `closed`: there is no confirmed display session
-
-This distinction matters:
-- `show` and `update` may still succeed in degraded mode because the active artifact was opened successfully
-- `status` is the non-strict inspection command and should tell you which mode the runtime is in
-- `verify` and `snapshot` stay strict and require native viewer capability
-
-## Supported content today
-
-Microcanvas is deliberately honest about supported formats.
-
-Supported now:
-- `.html`, `.htm`
-- `.md`, `.markdown`
-- `.pdf`
-- `.csv` rendered into a deterministic HTML table surface
-- `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
-- `.txt`, `.json`, `.js`, `.ts` wrapped into an HTML code-view surface
-
-Not supported yet:
-- arbitrary binary artifacts
-- archives like `.zip`
-- `.svg` and other image-like formats without an explicit display path
-- office docs and other formats without an explicit render/display path
-
-If a file type is not supported, Microcanvas returns `UNSUPPORTED_CONTENT` instead of pretending success.
-
-## Runtime model
+## Runtime Shape
 
 Microcanvas keeps a canonical runtime root with:
+
 - `runtime/active/`
 - `runtime/staging/`
 - `runtime/snapshots/`
@@ -113,36 +208,43 @@ Microcanvas keeps a canonical runtime root with:
 - `runtime/viewer-state.json`
 - request/response files used for viewer snapshot handoff
 
-The runtime state is expected to expose enough information for `status` and JSON callers to tell:
+That gives tools a stable place to inspect:
+
 - which surface is active
 - which artifact is the active entry
 - whether the runtime is `native`, `degraded`, or `closed`
 - whether native verification is currently possible
 - whether a write lock is held
 
-## Current viewer model
+## Known Barnacles
 
-- native macOS viewer is still the preferred display path
-- single active window
-- single active surface at a time
-- `wkwebview` surfaces for html, generated html, and CSV-backed table surfaces
-- native PDF display for pdf surfaces
-- native image display for png, jpg/jpeg, gif, and webp surfaces
-- viewer heartbeat written into runtime state when the native viewer is active
-- viewer-backed verify and snapshot flows remain native-only
+Microcanvas is usable early-stage software, so a few edges are still showing:
 
-## Safety stance
+- the native viewer path is currently macOS-first
+- only one active window and one active surface are supported at a time
+- `verify` and `snapshot` are intentionally strict about native viewer capability
+- unsupported formats fail clearly instead of being guessed into submission
+- the package is not published yet; right now the easiest path is running from source
 
-- no path traversal
-- no symlink escapes
-- source paths must resolve inside allowed roots
-- unsupported formats fail clearly
+## Development
 
-## Internal structure
+```bash
+npm install
+npm run build
+npm run check
+npm test
+```
 
-Surface detection and materialization now run through a lightweight adapter registry in `src/core/surface.ts`.
-Each supported family declares its extensions, manifest/viewer contract, and any deterministic transform in one place, which keeps the refactor explicit and reversible without changing the content model.
+The current implementation is small on purpose. Surface detection and materialization run through the adapter registry in [`src/core/surface.ts`](src/core/surface.ts), which keeps format support explicit and easier to extend without turning the content model into soup.
 
-## Current status
+## Contributing
 
-This is a working prototype with a real native viewer path, explicit degraded fallback semantics, viewer-backed verification and snapshots, write-lock discipline, and regression coverage around the core command flows.
+Contributions are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow and expectations.
+
+## Security
+
+If you believe you found a security issue, please use the process in [`SECURITY.md`](SECURITY.md).
+
+## License
+
+Microcanvas is available under the [MIT License](LICENSE).

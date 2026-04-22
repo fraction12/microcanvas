@@ -78,11 +78,30 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForNativeViewer(maxWaitMs = 1500): Promise<ViewerState | null> {
+function hasMatchingNativeHeartbeat(binaryPath: string): ViewerState | null {
+  const runtimeViewer = readViewerRuntimeState();
+  if (!runtimeViewer) {
+    return null;
+  }
+
+  const runningPids = findViewerPids(binaryPath);
+  if (!runningPids.includes(runtimeViewer.pid)) {
+    return null;
+  }
+
+  const viewer = getViewerState();
+  if (viewer.mode !== 'native' || viewer.pid !== runtimeViewer.pid) {
+    return null;
+  }
+
+  return viewer;
+}
+
+async function waitForNativeViewer(binaryPath: string, maxWaitMs = 1500): Promise<ViewerState | null> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < maxWaitMs) {
-    const viewer = getViewerState();
-    if (viewer.mode === 'native') {
+    const viewer = hasMatchingNativeHeartbeat(binaryPath);
+    if (viewer) {
       return viewer;
     }
     await sleep(50);
@@ -199,7 +218,7 @@ export async function launchViewer(entryPath?: string): Promise<ViewerState> {
   let viewerMode: ViewerState['mode'] = 'closed';
 
   if (launchNativeViewerBinary()) {
-    viewer = await waitForNativeViewer();
+    viewer = await waitForNativeViewer(binary);
     if (viewer?.mode === 'native') {
       viewerMode = 'native';
     }

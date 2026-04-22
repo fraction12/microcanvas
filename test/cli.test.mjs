@@ -11,6 +11,8 @@ import { runSnapshot } from '../dist/cli/commands/snapshot.js';
 
 process.env.MICROCANVAS_NATIVE_VIEWER_PID = String(process.pid);
 
+const serialTest = (name, fn) => test(name, { concurrency: false }, fn);
+
 const execFileAsync = promisify(execFile);
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(testDir, '..');
@@ -88,7 +90,7 @@ function writeActiveManifest(surfaceId, overrides = {}) {
   }, null, 2));
 }
 
-async function waitForViewerRequest(timeoutMs = 4000) {
+async function waitForViewerRequest(timeoutMs = 5000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     if (fs.existsSync(viewerRequestFile)) {
@@ -164,7 +166,7 @@ test.beforeEach(() => {
   resetRuntime();
 });
 
-test('show renders and activates an inside-root markdown file with explicit viewer capability metadata', async () => {
+serialTest('show renders and activates an inside-root markdown file with explicit viewer capability metadata', async () => {
   const result = await runCli(['show', insideFile]);
   const record = expectSuccess(result);
 
@@ -186,7 +188,7 @@ test('show renders and activates an inside-root markdown file with explicit view
   assert.match(html, /color:\s*#17212b;/);
 });
 
-test('show renders and activates csv as a deterministic html table surface', async () => {
+serialTest('show renders and activates csv as a deterministic html table surface', async () => {
   const result = await runCli(['show', csvFile]);
   const record = expectSuccess(result);
 
@@ -212,7 +214,7 @@ test('show renders and activates csv as a deterministic html table surface', asy
   assert.match(html, /Uses &quot;escaped quotes&quot; cleanly/);
 });
 
-test('show renders and activates supported image files across formats', async () => {
+serialTest('show renders and activates supported image files across formats', async () => {
   const cases = [
     { file: pngImageFile, entryPath: 'test-image.png', contentType: 'image/png' },
     { file: jpgImageFile, entryPath: 'test-image.jpg', contentType: 'image/jpeg' },
@@ -240,7 +242,7 @@ test('show renders and activates supported image files across formats', async ()
   }
 });
 
-test('render keeps adapter-backed staging behavior stable across supported families', async () => {
+serialTest('render keeps adapter-backed staging behavior stable across supported families', async () => {
   const cases = [
     {
       file: insideFile,
@@ -283,7 +285,7 @@ test('render keeps adapter-backed staging behavior stable across supported famil
   }
 });
 
-test('update preserves the active surface id and reports whether the viewer is native or degraded', async () => {
+serialTest('update preserves the active surface id and reports whether the viewer is native or degraded', async () => {
   const shown = await runCli(['show', insideFile]);
   const shownRecord = expectSuccess(shown);
 
@@ -323,7 +325,7 @@ test('update preserves the active surface id and reports whether the viewer is n
   }
 });
 
-test('snapshot writes a snapshot artifact for the active surface when native viewer capability is available', async () => {
+serialTest('snapshot writes a snapshot artifact for the active surface when native viewer capability is available', async () => {
   const shown = await runCli(['show', insideFile]);
   const shownRecord = expectSuccess(shown);
 
@@ -336,17 +338,16 @@ test('snapshot writes a snapshot artifact for the active surface when native vie
   const pending = runCli(['snapshot']);
   const request = await waitForViewerRequest();
 
-  if (request) {
-    assert.equal(request.expectedViewerPid, process.pid);
-    fs.writeFileSync(request.snapshotPath, 'fake-png-data');
-    fs.writeFileSync(viewerResponseFile, JSON.stringify({
-      requestId: request.requestId,
-      ok: true,
-      captureState: 'fresh',
-      snapshotPath: request.snapshotPath,
-      completedAt: new Date().toISOString()
-    }, null, 2));
-  }
+  assert.ok(request);
+  assert.equal(request.expectedViewerPid, process.pid);
+  fs.writeFileSync(request.snapshotPath, 'fake-png-data');
+  fs.writeFileSync(viewerResponseFile, JSON.stringify({
+    requestId: request.requestId,
+    ok: true,
+    captureState: 'fresh',
+    snapshotPath: request.snapshotPath,
+    completedAt: new Date().toISOString()
+  }, null, 2));
 
   const snapshot = await pending;
   const record = expectSuccess(snapshot);
@@ -356,19 +357,19 @@ test('snapshot writes a snapshot artifact for the active surface when native vie
   assert.equal(snapshot.verificationStatus, 'verified');
 });
 
-test('outside-root file is rejected through AgentTK failure metadata', async () => {
+serialTest('outside-root file is rejected through AgentTK failure metadata', async () => {
   const result = await runCli(['show', outsideFile]);
   const error = expectFailure(result, 'INVALID_INPUT');
   assert.match(error.message, /Path escapes allowed roots/);
 });
 
-test('unsupported file types fail honestly with UNSUPPORTED_CONTENT', async () => {
+serialTest('unsupported file types fail honestly with UNSUPPORTED_CONTENT', async () => {
   const result = await runCli(['show', unsupportedFile]);
   const error = expectFailure(result, 'UNSUPPORTED_CONTENT');
   assert.match(error.message, /Supported today: html, md, pdf, csv, png, jpg, jpeg, gif, webp, txt, json, js, ts/);
 });
 
-test('status reports native viewer mode when heartbeat is fresh and pid is alive', async () => {
+serialTest('status reports native viewer mode when heartbeat is fresh and pid is alive', async () => {
   writeRuntimeState({
     activeSurfaceId: 'surface-native',
     viewerMode: 'native',
@@ -392,7 +393,7 @@ test('status reports native viewer mode when heartbeat is fresh and pid is alive
   assert.equal(record.viewer.open, true);
 });
 
-test('status reports degraded mode and disabled verification capability when only external-open fallback is recorded', async () => {
+serialTest('status reports degraded mode and disabled verification capability when only external-open fallback is recorded', async () => {
   writeRuntimeState({
     activeSurfaceId: 'surface-degraded',
     viewerMode: 'degraded',
@@ -411,7 +412,7 @@ test('status reports degraded mode and disabled verification capability when onl
   assert.equal(record.artifacts.primary, path.join(activeDir, 'index.html'));
 });
 
-test('verify fails when only degraded viewer mode is available', async () => {
+serialTest('verify fails when only degraded viewer mode is available', async () => {
   writeRuntimeState({
     activeSurfaceId: 'surface-stale',
     viewerMode: 'degraded',
@@ -426,7 +427,7 @@ test('verify fails when only degraded viewer mode is available', async () => {
   assert.match(error.message, /native viewer|degraded/i);
 });
 
-test('snapshot fails clearly when only degraded viewer mode is available', async () => {
+serialTest('snapshot fails clearly when only degraded viewer mode is available', async () => {
   writeRuntimeState({
     activeSurfaceId: 'surface-degraded',
     viewerMode: 'degraded',
@@ -441,7 +442,7 @@ test('snapshot fails clearly when only degraded viewer mode is available', async
   assert.match(error.message, /native viewer|degraded/i);
 });
 
-test('snapshot surfaces degraded warning when native viewer is holding prior content', async () => {
+serialTest('snapshot surfaces degraded warning when native viewer is holding prior content', async () => {
   const shown = await runCli(['show', insideFile]);
   const shownRecord = expectSuccess(shown);
 
@@ -480,7 +481,7 @@ test('snapshot surfaces degraded warning when native viewer is holding prior con
   assert.match(record.message, /newer content was not ready/i);
 });
 
-test('requestViewerSnapshot writes request and resolves response handshake', async () => {
+serialTest('requestViewerSnapshot writes request and resolves response handshake', async () => {
   writeViewerState({
     pid: process.pid,
     lastSeenAt: new Date().toISOString(),
@@ -510,7 +511,7 @@ test('requestViewerSnapshot writes request and resolves response handshake', asy
   assert.ok(fs.existsSync(snapshot.snapshotPath));
 });
 
-test('requestViewerSnapshot tolerates a transient malformed viewer response', async () => {
+serialTest('requestViewerSnapshot tolerates a transient malformed viewer response', async () => {
   writeViewerState({
     pid: process.pid,
     lastSeenAt: new Date().toISOString(),
@@ -539,7 +540,7 @@ test('requestViewerSnapshot tolerates a transient malformed viewer response', as
   assert.match(snapshot.warning ?? '', /held last good content/i);
 });
 
-test('human help output is command-aware', async () => {
+serialTest('human help output is command-aware', async () => {
   const rootHelp = await runCliText(['--help']);
   assert.equal(rootHelp.stderr, '');
   assert.match(rootHelp.stdout, /microcanvas/);
@@ -556,7 +557,7 @@ test('human help output is command-aware', async () => {
   assert.match(renderHelp.stdout, /microcanvas render README\.md --json/);
 });
 
-test('json help output preserves AgentTK-compatible tool and command envelopes', async () => {
+serialTest('json help output preserves AgentTK-compatible tool and command envelopes', async () => {
   const rootHelp = await runCli(['--help']);
   assert.deepEqual(rootHelp, {
     ok: true,
@@ -609,7 +610,7 @@ test('json help output preserves AgentTK-compatible tool and command envelopes',
   });
 });
 
-test('json unknown command output preserves the failure envelope', async () => {
+serialTest('json unknown command output preserves the failure envelope', async () => {
   const failure = await runCli(['nope']);
   assert.deepEqual(failure, {
     ok: false,
@@ -620,7 +621,7 @@ test('json unknown command output preserves the failure envelope', async () => {
   });
 });
 
-test('human status output uses presenter details', async () => {
+serialTest('human status output uses presenter details', async () => {
   writeRuntimeState({
     activeSurfaceId: 'surface-human',
     viewerMode: 'degraded',
@@ -643,7 +644,7 @@ test('human status output uses presenter details', async () => {
   assert.doesNotMatch(status.stdout, /Verification: not_applicable/);
 });
 
-test('human show output surfaces warnings through the shared presenter', async () => {
+serialTest('human show output surfaces warnings through the shared presenter', async () => {
   const show = await runCliText(['show', insideFile]);
 
   assert.equal(show.stderr, '');
@@ -653,7 +654,7 @@ test('human show output surfaces warnings through the shared presenter', async (
   assert.match(show.stdout, /Warning: Surface was activated, but no viewer session could be opened\./);
 });
 
-test('human verify failure output stays readable for operators', async () => {
+serialTest('human verify failure output stays readable for operators', async () => {
   writeRuntimeState({
     activeSurfaceId: 'surface-verify',
     viewerMode: 'degraded',
@@ -677,7 +678,7 @@ test('human verify failure output stays readable for operators', async () => {
   assert.doesNotMatch(verify.stderr, /Verification: verification_failed/);
 });
 
-test('human input failures humanize user action required classification', async () => {
+serialTest('human input failures humanize user action required classification', async () => {
   const failure = await runCliText(['show', outsideFile]);
 
   assert.equal(failure.stdout, '');
@@ -690,7 +691,7 @@ test('human input failures humanize user action required classification', async 
   assert.doesNotMatch(failure.stderr, /Next: fix_input/);
 });
 
-test('human unknown command writes the failure presentation to stderr', async () => {
+serialTest('human unknown command writes the failure presentation to stderr', async () => {
   const failure = await runCliText(['nope']);
 
   assert.equal(failure.stdout, '');

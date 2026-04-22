@@ -136,12 +136,14 @@ If a file type is not supported, Microcanvas returns `UNSUPPORTED_CONTENT` inste
 
 Microcanvas separates "something opened" from "the native viewer is fully available."
 
-- `native`: the Microcanvas viewer is available and can satisfy `verify` and `snapshot`
+- `native`: the Microcanvas viewer heartbeat is fresh and can satisfy `verify` and `snapshot`
 - `degraded`: the active artifact opened through an external fallback path, but native verification and snapshot flows are unavailable
 - `closed`: there is no confirmed viewer session
 
 This matters in practice:
 
+- `show` and `update` only report `native` after the viewer heartbeat confirms readiness, and the native app brings its window to the front when new content is presented when macOS allows it
+- if an older native viewer session is still hanging around, Microcanvas clears that stale session before trusting a new launch attempt
 - `show` and `update` can still succeed in degraded mode
 - `status` tells you what kind of runtime/viewer state you currently have
 - `verify` stays strict and requires native viewer-backed confirmation

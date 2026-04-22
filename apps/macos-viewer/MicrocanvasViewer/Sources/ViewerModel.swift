@@ -173,6 +173,7 @@ final class ViewerModel: ObservableObject {
                     readiness = ViewerReadinessCoordinator()
                     statusText = decoded.title
                     persistPresentedSurface(in: runtimeRoot)
+                    bringViewerToFront()
                 }
             }
             writeViewerState()
@@ -209,6 +210,7 @@ final class ViewerModel: ObservableObject {
         loadFailureMessage = nil
         statusText = manifest?.title ?? "Surface ready"
         persistPresentedSurface()
+        bringViewerToFront()
         writeViewerState()
         return true
     }
@@ -608,6 +610,10 @@ final class ViewerModel: ObservableObject {
             presentedSurfaceViewId = nil
             presentedSurfaceViewRevision = nil
         }
+    }
+
+    private func bringViewerToFront() {
+        AppDelegate.bringViewerToFront()
     }
 
     private func writeViewerState() {

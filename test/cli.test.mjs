@@ -325,6 +325,11 @@ serialTest('update preserves the active surface id and reports whether the viewe
   }
 });
 
+serialTest('readme documents native viewer frontmost activation on show/update', () => {
+  const readme = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
+  assert.match(readme, /brings its window to the front when new content is presented/i);
+});
+
 serialTest('snapshot writes a snapshot artifact for the active surface when native viewer capability is available', async () => {
   const shown = await runCli(['show', insideFile]);
   const shownRecord = expectSuccess(shown);
@@ -410,6 +415,29 @@ serialTest('status reports degraded mode and disabled verification capability wh
   assert.equal(record.viewer.canVerify, false);
   assert.equal(record.viewer.open, true);
   assert.equal(record.artifacts.primary, path.join(activeDir, 'index.html'));
+});
+
+serialTest('stale viewer heartbeat alone does not report native-open status', async () => {
+  writeRuntimeState({
+    activeSurfaceId: 'surface-stale',
+    viewerMode: 'native',
+    viewerOpen: true,
+    updatedAt: new Date().toISOString()
+  });
+  writeActiveManifest('surface-stale');
+  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>stale</body></html>');
+  writeViewerState({
+    pid: process.pid,
+    lastSeenAt: new Date(Date.now() - 15_000).toISOString(),
+    activeSurfaceId: 'surface-stale'
+  });
+
+  assert.equal(getViewerOpenStatus(), false);
+  const status = await runCli(['status']);
+  const record = expectSuccess(status);
+  assert.equal(record.viewer.mode, 'closed');
+  assert.equal(record.viewer.open, false);
+  assert.equal(record.viewer.canVerify, false);
 });
 
 serialTest('verify fails when only degraded viewer mode is available', async () => {

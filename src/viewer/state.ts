@@ -9,14 +9,6 @@ import {
 import { paths } from '../core/paths.js';
 import { readState } from '../core/state.js';
 
-function expectedNativeViewerPid(): number | null {
-  const raw = process.env.MICROCANVAS_NATIVE_VIEWER_PID;
-  if (!raw) return null;
-
-  const parsed = Number(raw);
-  return Number.isInteger(parsed) ? parsed : null;
-}
-
 export interface ViewerRuntimeState {
   pid: number;
   lastSeenAt: string;
@@ -56,11 +48,6 @@ function getNativeViewerState(maxAgeMs = 5000): ViewerState | null {
   const state = readViewerRuntimeState();
   if (!state) return null;
 
-  const expectedPid = expectedNativeViewerPid();
-  if (expectedPid !== null && state.pid !== expectedPid) {
-    return null;
-  }
-
   const ageMs = Date.now() - Date.parse(state.lastSeenAt);
   if (!Number.isFinite(ageMs) || ageMs > maxAgeMs) return null;
   if (!isPidRunning(state.pid)) return null;
@@ -75,6 +62,11 @@ function getNativeViewerState(maxAgeMs = 5000): ViewerState | null {
 export function getViewerState(runtimeState: RuntimeState = readState(), maxAgeMs = 5000): ViewerState {
   const nativeViewer = getNativeViewerState(maxAgeMs);
   if (nativeViewer) {
+    if (runtimeState.viewerMode === 'degraded') {
+      return createViewerState('degraded', {
+        activeSurfaceId: runtimeState.activeSurfaceId
+      });
+    }
     return nativeViewer;
   }
 

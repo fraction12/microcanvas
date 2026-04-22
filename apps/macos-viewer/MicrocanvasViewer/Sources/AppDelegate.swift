@@ -10,6 +10,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    static func bringViewerToFront() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        guard let window = sharedWindow ?? NSApp.windows.first else {
+            return
+        }
+
+        sharedWindow = window
+        window.collectionBehavior.remove(.transient)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }

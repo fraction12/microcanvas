@@ -35,6 +35,22 @@ export async function runSnapshot(): Promise<CommandResult<MicrocanvasRecord>> {
     });
   }
 
+  if (!viewer.verificationCapable) {
+    return operationalFailure(
+      'snapshot',
+      'VERIFY_FAILED',
+      viewer.mode === 'degraded'
+        ? 'native viewer confirmation is unavailable while the runtime is in degraded display mode'
+        : 'viewer is not confirmed open',
+      {
+        classification: 'unknown',
+        retryable: true,
+        nextAction: 'verify_state',
+        verificationStatus: 'verification_failed'
+      }
+    );
+  }
+
   try {
     const snapshot = await requestViewerSnapshot(manifest.surfaceId);
     const degraded = snapshot.captureState === 'degraded';

@@ -15,10 +15,12 @@ Microcanvas is still early-stage, so the best contributions are the ones that ke
 
 ```bash
 npm install
-npm run build
+npm link
 npm run check
 npm test
 ```
+
+If you do not want the repo linked globally while you work, `npm run build` is still fine for local-only development.
 
 ## What Makes A Good Change
 

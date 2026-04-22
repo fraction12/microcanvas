@@ -36,26 +36,33 @@ This repo is intentionally focused. It is not trying to be a full document suite
 
 ## Take It For A Spin
 
-Microcanvas is currently set up to run from source.
+Microcanvas is currently set up for local repo installs rather than npm publishing.
 
 ```bash
 npm install
-npm run build
-node dist/cli/index.js show README.md
-node dist/cli/index.js status --json
+npm link
+microcanvas show README.md
+microcanvas status --json
 ```
 
 That gives you the happy-path tour:
 
+- `npm link` installs the repo-local CLI as `microcanvas`
 - `show README.md` opens this README as the active surface
 - `status --json` reports the runtime and viewer state in a tool-friendly format
 
 Once a surface is active, the next useful moves are:
 
 ```bash
-node dist/cli/index.js update README.md
-node dist/cli/index.js verify --json
-node dist/cli/index.js snapshot --json
+microcanvas update README.md
+microcanvas verify --json
+microcanvas snapshot --json
+```
+
+If you want to undo the local install later, run:
+
+```bash
+npm unlink -g microcanvas
 ```
 
 ## Quick Command Tour
@@ -63,9 +70,9 @@ node dist/cli/index.js snapshot --json
 ### Show Something Off
 
 ```bash
-node dist/cli/index.js show path/to/file.md
-node dist/cli/index.js show path/to/file.png
-node dist/cli/index.js show path/to/file.csv --json
+microcanvas show path/to/file.md
+microcanvas show path/to/file.png
+microcanvas show path/to/file.csv --json
 ```
 
 Use `show` when you want Microcanvas to render if needed, activate the result, and open it.
@@ -73,7 +80,7 @@ Use `show` when you want Microcanvas to render if needed, activate the result, a
 ### Stage Without Opening
 
 ```bash
-node dist/cli/index.js render path/to/file.md --json
+microcanvas render path/to/file.md --json
 ```
 
 Use `render` when you want a staged surface artifact without activating it yet.
@@ -81,7 +88,7 @@ Use `render` when you want a staged surface artifact without activating it yet.
 ### Refresh The Active Surface
 
 ```bash
-node dist/cli/index.js update path/to/file.md --json
+microcanvas update path/to/file.md --json
 ```
 
 Use `update` when a surface is already active and you want to refresh it in place.
@@ -89,8 +96,8 @@ Use `update` when a surface is already active and you want to refresh it in plac
 ### Ask What Is Going On
 
 ```bash
-node dist/cli/index.js status --json
-node dist/cli/index.js verify --json
+microcanvas status --json
+microcanvas verify --json
 ```
 
 Use `status` for inspection. Use `verify` when you need strict confirmation that the active surface and viewer state line up.
@@ -98,7 +105,7 @@ Use `status` for inspection. Use `verify` when you need strict confirmation that
 ### Grab A Snapshot
 
 ```bash
-node dist/cli/index.js snapshot --json
+microcanvas snapshot --json
 ```
 
 When native snapshot capability is available, Microcanvas writes a real PNG snapshot and reports its path in the command result.
@@ -230,7 +237,7 @@ Microcanvas is usable early-stage software, so a few edges are still showing:
 
 ```bash
 npm install
-npm run build
+npm link
 npm run check
 npm test
 ```

@@ -14,15 +14,55 @@ export const paletteTokens = {
 
 const TOOL_TAGLINE = 'tiny stagehand for AI tools';
 
+function hexToRgb(hex: string): [number, number, number] {
+  const normalized = hex.replace('#', '');
+  return [
+    Number.parseInt(normalized.slice(0, 2), 16),
+    Number.parseInt(normalized.slice(2, 4), 16),
+    Number.parseInt(normalized.slice(4, 6), 16)
+  ];
+}
+
+function wrapAnsi(text: string, ...codes: string[]): string {
+  if (codes.length === 0) {
+    return text;
+  }
+
+  return `${codes.map((code) => `\u001b[${code}m`).join('')}${text}\u001b[0m`;
+}
+
+function brandColor(text: string, hex: string, options: { bold?: boolean; dim?: boolean } = {}): string {
+  const [red, green, blue] = hexToRgb(hex);
+  const codes = [`38;2;${red};${green};${blue}`];
+
+  if (options.bold) {
+    codes.unshift('1');
+  }
+
+  if (options.dim) {
+    codes.unshift('2');
+  }
+
+  return wrapAnsi(text, ...codes);
+}
+
 function colorsFor(mode: PresentationMode) {
   const colors = pc.createColors(mode === 'pretty');
+  const pretty = mode === 'pretty';
+
   return {
-    headline: (text: string) => colors.bold(colors.cyan(text)),
-    ok: (text: string) => colors.bold(colors.green(text)),
-    error: (text: string) => colors.bold(colors.red(text)),
-    warning: (text: string) => colors.bold(colors.yellow(text)),
-    accent: (text: string) => colors.bold(colors.magenta(text)),
-    muted: (text: string) => colors.dim(text)
+    headline: (text: string) =>
+      pretty ? brandColor(text, paletteTokens.teal, { bold: true }) : colors.bold(text),
+    ok: (text: string) =>
+      pretty ? brandColor(text, paletteTokens.teal, { bold: true }) : colors.bold(text),
+    error: (text: string) =>
+      pretty ? brandColor(text, paletteTokens.coral, { bold: true }) : colors.bold(text),
+    warning: (text: string) =>
+      pretty ? brandColor(text, '#e3b04b', { bold: true }) : colors.bold(text),
+    accent: (text: string) =>
+      pretty ? brandColor(text, paletteTokens.coral, { bold: true }) : colors.bold(text),
+    muted: (text: string) =>
+      pretty ? brandColor(text, paletteTokens.slate, { dim: true }) : colors.dim(text)
   };
 }
 

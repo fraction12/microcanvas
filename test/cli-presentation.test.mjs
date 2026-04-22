@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { renderCommandResult, renderToolHelp, resolvePresentationMode } from '../dist/cli/presentation.js';
+import { paletteTokens, renderCommandResult, renderToolHelp, resolvePresentationMode } from '../dist/cli/presentation.js';
 
 test('resolvePresentationMode prefers pretty only for interactive color-capable terminals', () => {
   assert.equal(resolvePresentationMode({ isTTY: true }, { NO_COLOR: '' }), 'plain');
@@ -251,4 +251,30 @@ test('pretty mode emits ANSI styling across help and command results while plain
   assert.doesNotMatch(plainResult, /\u001b\[/);
   assert.match(prettyResult, /\u001b\[/);
   assert.match(prettyResult, /Next: verify state/);
+});
+
+test('pretty mode uses the banner-derived palette tokens for live styling', () => {
+  const prettyHelp = renderToolHelp(
+    {
+      kind: 'tool',
+      name: 'microcanvas',
+      description: 'A lightweight, agent-friendly canvas runtime and native viewer.',
+      commands: [{ name: 'show', description: 'Activate a staged surface or render and show a source file.' }]
+    },
+    'pretty'
+  );
+
+  const [tealRed, tealGreen, tealBlue] = [
+    Number.parseInt(paletteTokens.teal.slice(1, 3), 16),
+    Number.parseInt(paletteTokens.teal.slice(3, 5), 16),
+    Number.parseInt(paletteTokens.teal.slice(5, 7), 16)
+  ];
+  const [coralRed, coralGreen, coralBlue] = [
+    Number.parseInt(paletteTokens.coral.slice(1, 3), 16),
+    Number.parseInt(paletteTokens.coral.slice(3, 5), 16),
+    Number.parseInt(paletteTokens.coral.slice(5, 7), 16)
+  ];
+
+  assert.match(prettyHelp, new RegExp(`\\u001b\\[1m\\u001b\\[38;2;${tealRed};${tealGreen};${tealBlue}m`));
+  assert.match(prettyHelp, new RegExp(`\\u001b\\[1m\\u001b\\[38;2;${coralRed};${coralGreen};${coralBlue}m`));
 });

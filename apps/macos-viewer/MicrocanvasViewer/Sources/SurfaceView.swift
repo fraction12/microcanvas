@@ -4,6 +4,8 @@ import PDFKit
 import AppKit
 
 struct SurfaceView: View {
+    @EnvironmentObject private var model: ViewerModel
+
     let url: URL
     let manifest: SurfaceManifest
     let pendingURL: URL?
@@ -22,12 +24,23 @@ struct SurfaceView: View {
                 pendingSurfaceId: pendingManifest?.surfaceId,
                 pendingRevision: pendingManifest?.updatedAt,
                 onReady: onWebSurfaceReady,
-                onLoadFailure: onWebSurfaceLoadFailure
+                onLoadFailure: onWebSurfaceLoadFailure,
+                onPresentedWebViewChanged: model.updatePresentedWebView
             )
         case "pdf":
-            PDFSurfaceView(url: url)
+            PDFSurfaceView(
+                url: url,
+                surfaceId: manifest.surfaceId,
+                revision: manifest.updatedAt,
+                onPresentedSurfaceViewChanged: model.updatePresentedSurfaceView
+            )
         case "image":
-            ImageSurfaceView(url: url)
+            ImageSurfaceView(
+                url: url,
+                surfaceId: manifest.surfaceId,
+                revision: manifest.updatedAt,
+                onPresentedSurfaceViewChanged: model.updatePresentedSurfaceView
+            )
         default:
             FileSurfaceFallback(url: url, manifest: manifest)
         }
@@ -49,9 +62,14 @@ struct WebSurfaceView: NSViewRepresentable {
     let pendingRevision: String?
     let onReady: (String, String) -> Bool
     let onLoadFailure: (String, String, String) -> Void
+    let onPresentedWebViewChanged: (WKWebView?, String, String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onReady: onReady, onLoadFailure: onLoadFailure)
+        Coordinator(
+            onReady: onReady,
+            onLoadFailure: onLoadFailure,
+            onPresentedWebViewChanged: onPresentedWebViewChanged
+        )
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -91,13 +109,16 @@ struct WebSurfaceView: NSViewRepresentable {
         private var loadingTarget: Target?
         private let onReady: (String, String) -> Bool
         private let onLoadFailure: (String, String, String) -> Void
+        private let onPresentedWebViewChanged: (WKWebView?, String, String) -> Void
 
         init(
             onReady: @escaping (String, String) -> Bool,
-            onLoadFailure: @escaping (String, String, String) -> Void
+            onLoadFailure: @escaping (String, String, String) -> Void,
+            onPresentedWebViewChanged: @escaping (WKWebView?, String, String) -> Void
         ) {
             self.onReady = onReady
             self.onLoadFailure = onLoadFailure
+            self.onPresentedWebViewChanged = onPresentedWebViewChanged
         }
 
         func ensureVisibleTarget(target: Target, in container: NSView) {
@@ -138,12 +159,15 @@ struct WebSurfaceView: NSViewRepresentable {
             if webView == loadingWebView, let loadingTarget {
                 if onReady(loadingTarget.surfaceId, loadingTarget.revision) {
                     promoteLoadingWebView()
+                    onPresentedWebViewChanged(webView, loadingTarget.surfaceId, loadingTarget.revision)
                 }
                 return
             }
 
             if webView == visibleWebView, let visibleTarget, loadingTarget == nil {
-                _ = onReady(visibleTarget.surfaceId, visibleTarget.revision)
+                if onReady(visibleTarget.surfaceId, visibleTarget.revision) {
+                    onPresentedWebViewChanged(webView, visibleTarget.surfaceId, visibleTarget.revision)
+                }
             }
         }
 
@@ -209,20 +233,46 @@ struct WebSurfaceView: NSViewRepresentable {
 
 struct PDFSurfaceView: NSViewRepresentable {
     let url: URL
+    let surfaceId: String
+    let revision: String
+    let onPresentedSurfaceViewChanged: (NSView?, String, String) -> Void
 
     func makeNSView(context: Context) -> PDFView {
         let view = PDFView()
         view.autoScales = true
         view.backgroundColor = .windowBackgroundColor
+        onPresentedSurfaceViewChanged(view, surfaceId, revision)
         return view
     }
 
     func updateNSView(_ nsView: PDFView, context: Context) {
         nsView.document = PDFDocument(url: url)
+        onPresentedSurfaceViewChanged(nsView, surfaceId, revision)
     }
 }
 
-struct ImageSurfaceView: View {
+struct ImageSurfaceView: NSViewRepresentable {
+    let url: URL
+    let surfaceId: String
+    let revision: String
+    let onPresentedSurfaceViewChanged: (NSView?, String, String) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSHostingView(rootView: ImageSurfaceBody(url: url))
+        onPresentedSurfaceViewChanged(view, surfaceId, revision)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let hostingView = nsView as? NSHostingView<ImageSurfaceBody> else {
+            return
+        }
+        hostingView.rootView = ImageSurfaceBody(url: url)
+        onPresentedSurfaceViewChanged(hostingView, surfaceId, revision)
+    }
+}
+
+struct ImageSurfaceBody: View {
     let url: URL
 
     var body: some View {

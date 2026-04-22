@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import WebKit
 
 struct RuntimeState: Decodable {
     let activeSurfaceId: String?
@@ -25,7 +26,7 @@ struct ViewerState: Codable {
     let activeSurfaceId: String?
 }
 
-struct SnapshotRequest: Decodable {
+struct SnapshotRequest: Codable {
     let type: String
     let requestId: String
     let snapshotPath: String
@@ -34,7 +35,7 @@ struct SnapshotRequest: Decodable {
     let expectedViewerPid: Int32?
 }
 
-struct SnapshotResponse: Encodable {
+struct SnapshotResponse: Codable {
     let requestId: String
     let ok: Bool
     let snapshotPath: String?
@@ -60,6 +61,13 @@ final class ViewerModel: ObservableObject {
     private var lastSnapshotRequestId: String?
     private let repoRootOverride: URL?
     private let lastGoodSurfaceStore = LastGoodSurfaceStore()
+    private let snapshotter: PresentedSurfaceSnapshotter
+    private weak var presentedWebView: WKWebView?
+    private var presentedWebSurfaceId: String?
+    private var presentedWebRevision: String?
+    private weak var presentedSurfaceView: NSView?
+    private var presentedSurfaceViewId: String?
+    private var presentedSurfaceViewRevision: String?
 
     var overlayMessage: String? {
         readiness.overlayMessage
@@ -74,8 +82,12 @@ final class ViewerModel: ObservableObject {
         )
     }
 
-    init(repoRootOverride: URL? = ViewerModel.resolveRepoRootOverride()) {
+    init(
+        repoRootOverride: URL? = ViewerModel.resolveRepoRootOverride(),
+        snapshotter: PresentedSurfaceSnapshotter = PresentedSurfaceSnapshotter()
+    ) {
         self.repoRootOverride = repoRootOverride
+        self.snapshotter = snapshotter
     }
 
     func startPolling() {
@@ -105,6 +117,7 @@ final class ViewerModel: ObservableObject {
             guard fileManager.fileExists(atPath: manifestURL.path) else {
                 if !holdCurrentPresentation("Holding last surface")
                     && !restoreLastGoodSurfaceIfPossible(in: runtimeRoot) {
+                    clearPresentedVisualSurfaces()
                     manifest = nil
                     activeURL = nil
                     pendingManifest = nil
@@ -125,6 +138,7 @@ final class ViewerModel: ObservableObject {
             if !fileManager.fileExists(atPath: resolvedURL.path) {
                 if !holdCurrentPresentation("Holding last surface")
                     && !restoreLastGoodSurfaceIfPossible(in: runtimeRoot) {
+                    clearPresentedVisualSurfaces()
                     manifest = decoded
                     activeURL = nil
                     pendingManifest = nil
@@ -147,6 +161,7 @@ final class ViewerModel: ObservableObject {
                 readiness.beginReload(surfaceId: decoded.surfaceId, revision: decoded.updatedAt)
                 statusText = "Updating \(decoded.title)"
             } else {
+                clearPresentedVisualSurfaces(exceptRenderMode: decoded.renderMode)
                 manifest = decoded
                 activeURL = resolvedURL
                 pendingManifest = nil
@@ -163,6 +178,7 @@ final class ViewerModel: ObservableObject {
             writeViewerState()
         } catch {
             if !holdCurrentPresentation("Viewer error", loadFailureMessage: error.localizedDescription) {
+                clearPresentedVisualSurfaces()
                 manifest = nil
                 activeURL = nil
                 pendingManifest = nil
@@ -195,6 +211,31 @@ final class ViewerModel: ObservableObject {
         persistPresentedSurface()
         writeViewerState()
         return true
+    }
+
+    func updatePresentedWebView(_ webView: WKWebView?, surfaceId: String, revision: String) {
+        guard manifest?.renderMode == "wkwebview",
+              manifest?.surfaceId == surfaceId,
+              manifest?.updatedAt == revision else {
+            return
+        }
+
+        presentedWebView = webView
+        presentedWebSurfaceId = surfaceId
+        presentedWebRevision = revision
+    }
+
+    func updatePresentedSurfaceView(_ view: NSView?, surfaceId: String, revision: String) {
+        guard let manifest,
+              manifest.renderMode == "image" || manifest.renderMode == "pdf",
+              manifest.surfaceId == surfaceId,
+              manifest.updatedAt == revision else {
+            return
+        }
+
+        presentedSurfaceView = view
+        presentedSurfaceViewId = surfaceId
+        presentedSurfaceViewRevision = revision
     }
 
     func handleWebSurfaceLoadFailure(surfaceId: String, revision: String, description: String) {
@@ -250,6 +291,7 @@ final class ViewerModel: ObservableObject {
         if restoredManifest.renderMode == "wkwebview" {
             readiness.beginReload(surfaceId: restoredManifest.surfaceId, revision: restoredManifest.updatedAt)
         } else {
+            clearPresentedVisualSurfaces(exceptRenderMode: restoredManifest.renderMode)
             readiness = ViewerReadinessCoordinator()
             persistPresentedSurface(in: runtimeRoot)
         }
@@ -325,16 +367,17 @@ final class ViewerModel: ObservableObject {
         }
     }
 
-    private func tryHandleSnapshotRequest(in runtimeRoot: URL) {
+    func tryHandleSnapshotRequest(in runtimeRoot: URL) {
         let requestURL = runtimeRoot.appendingPathComponent("viewer-request.json", isDirectory: false)
         let responseURL = runtimeRoot.appendingPathComponent("viewer-response.json", isDirectory: false)
         guard fileManager.fileExists(atPath: requestURL.path) else {
             return
         }
 
+        let request: SnapshotRequest
         do {
             let data = try Data(contentsOf: requestURL)
-            let request = try JSONDecoder().decode(SnapshotRequest.self, from: data)
+            request = try JSONDecoder().decode(SnapshotRequest.self, from: data)
             guard request.type == "snapshot" else {
                 return
             }
@@ -363,32 +406,18 @@ final class ViewerModel: ObservableObject {
         }
 
         Task { @MainActor in
-            let response = await self.snapshotResponse(for: runtimeRoot)
+            let response = await self.snapshotResponse(for: request, in: runtimeRoot)
+            guard self.lastSnapshotRequestId == request.requestId else {
+                return
+            }
             if let responseData = try? JSONEncoder().encode(response) {
                 try? responseData.write(to: responseURL)
             }
         }
     }
 
-    private func snapshotResponse(for runtimeRoot: URL) async -> SnapshotResponse {
-        let requestURL = runtimeRoot.appendingPathComponent("viewer-request.json", isDirectory: false)
-
+    func snapshotResponse(for request: SnapshotRequest, in runtimeRoot: URL) async -> SnapshotResponse {
         do {
-            let data = try Data(contentsOf: requestURL)
-            let request = try JSONDecoder().decode(SnapshotRequest.self, from: data)
-
-            guard let window = AppDelegate.sharedWindow else {
-                return SnapshotResponse(
-                    requestId: request.requestId,
-                    ok: false,
-                    snapshotPath: nil,
-                    captureState: nil,
-                    warning: nil,
-                    error: "viewer window is unavailable",
-                    completedAt: ISO8601DateFormatter().string(from: Date())
-                )
-            }
-
             let outcome = await waitForSnapshotOutcome(surfaceId: request.surfaceId)
             let snapshotURL = URL(fileURLWithPath: request.snapshotPath, isDirectory: false)
 
@@ -405,7 +434,7 @@ final class ViewerModel: ObservableObject {
                 )
             case .fresh:
                 try fileManager.createDirectory(at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try capture(window: window, to: snapshotURL)
+                try await capturePresentedSurface(to: snapshotURL)
                 return SnapshotResponse(
                     requestId: request.requestId,
                     ok: true,
@@ -417,7 +446,7 @@ final class ViewerModel: ObservableObject {
                 )
             case .degraded(let warning):
                 try fileManager.createDirectory(at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try capture(window: window, to: snapshotURL)
+                try await capturePresentedSurface(to: snapshotURL)
                 return SnapshotResponse(
                     requestId: request.requestId,
                     ok: true,
@@ -430,7 +459,7 @@ final class ViewerModel: ObservableObject {
             }
         } catch {
             return SnapshotResponse(
-                requestId: lastSnapshotRequestId ?? "unknown",
+                requestId: request.requestId,
                 ok: false,
                 snapshotPath: nil,
                 captureState: nil,
@@ -443,7 +472,7 @@ final class ViewerModel: ObservableObject {
 
     private func waitForSnapshotOutcome(surfaceId: String) async -> ViewerReadinessCoordinator.SnapshotOutcome {
         if manifest?.renderMode != "wkwebview" {
-            return activeURL == nil ? .failedNoVisibleFrame : .fresh
+            return await waitForPresentedNonWebSnapshotOutcome(surfaceId: surfaceId)
         }
 
         if let immediate = readiness.immediateSnapshotOutcome(for: surfaceId) {
@@ -466,23 +495,119 @@ final class ViewerModel: ObservableObject {
         return readiness.markTimedOutSnapshot()
     }
 
-    private func capture(window: NSWindow, to url: URL) throws {
-        let windowID = CGWindowID(window.windowNumber)
-        let bounds = window.frame
-        guard let cgImage = CGWindowListCreateImage(
-            bounds,
-            .optionIncludingWindow,
-            windowID,
-            [.boundsIgnoreFraming, .bestResolution]
-        ) else {
-            throw NSError(domain: "MicrocanvasViewer", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unable to capture window image for snapshot"])
+    private func waitForPresentedNonWebSnapshotOutcome(surfaceId: String) async -> ViewerReadinessCoordinator.SnapshotOutcome {
+        if let immediate = immediatePresentedNonWebSnapshotOutcome(for: surfaceId) {
+            return immediate
         }
 
-        let image = NSBitmapImageRep(cgImage: cgImage)
-        guard let pngData = image.representation(using: .png, properties: [:]) else {
-            throw NSError(domain: "MicrocanvasViewer", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unable to encode snapshot as PNG"])
+        let timeoutNs: UInt64 = 2_000_000_000
+        let stepNs: UInt64 = 100_000_000
+        var elapsedNs: UInt64 = 0
+
+        while elapsedNs < timeoutNs {
+            try? await Task.sleep(nanoseconds: stepNs)
+            elapsedNs += stepNs
+
+            if let immediate = immediatePresentedNonWebSnapshotOutcome(for: surfaceId) {
+                return immediate
+            }
         }
-        try pngData.write(to: url)
+
+        return .failedNoVisibleFrame
+    }
+
+    private func immediatePresentedNonWebSnapshotOutcome(for surfaceId: String) -> ViewerReadinessCoordinator.SnapshotOutcome? {
+        guard let manifest, activeURL != nil else {
+            return .failedNoVisibleFrame
+        }
+
+        guard manifest.surfaceId == surfaceId else {
+            return nil
+        }
+
+        switch manifest.renderMode {
+        case "image", "pdf":
+            return hasMatchingPresentedSurfaceView(for: manifest) ? .fresh : nil
+        default:
+            return .fresh
+        }
+    }
+
+    private func hasMatchingPresentedSurfaceView(for manifest: SurfaceManifest) -> Bool {
+        guard presentedSurfaceView != nil else {
+            return false
+        }
+
+        return presentedSurfaceViewId == manifest.surfaceId
+            && presentedSurfaceViewRevision == manifest.updatedAt
+    }
+
+    private func capturePresentedSurface(to url: URL) async throws {
+        guard let manifest, activeURL != nil else {
+            throw NSError(
+                domain: "MicrocanvasViewer",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "viewer has no visible frame to capture"]
+            )
+        }
+
+        let surface: PresentedSurface
+        switch manifest.renderMode {
+        case "wkwebview":
+            guard let presentedWebView,
+                  presentedWebSurfaceId == manifest.surfaceId,
+                  presentedWebRevision == manifest.updatedAt else {
+                throw NSError(
+                    domain: "MicrocanvasViewer",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "viewer has no presented web surface to capture"]
+                )
+            }
+            surface = .webView(presentedWebView)
+        case "image":
+            guard let presentedSurfaceView,
+                  presentedSurfaceViewId == manifest.surfaceId,
+                  presentedSurfaceViewRevision == manifest.updatedAt else {
+                throw NSError(
+                    domain: "MicrocanvasViewer",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey: "viewer has no presented image surface to capture"]
+                )
+            }
+            surface = .imageView(presentedSurfaceView)
+        case "pdf":
+            guard let presentedSurfaceView,
+                  presentedSurfaceViewId == manifest.surfaceId,
+                  presentedSurfaceViewRevision == manifest.updatedAt else {
+                throw NSError(
+                    domain: "MicrocanvasViewer",
+                    code: 5,
+                    userInfo: [NSLocalizedDescriptionKey: "viewer has no presented PDF surface to capture"]
+                )
+            }
+            surface = .pdfView(presentedSurfaceView)
+        default:
+            throw NSError(
+                domain: "MicrocanvasViewer",
+                code: 6,
+                userInfo: [NSLocalizedDescriptionKey: "unsupported presented surface for snapshot"]
+            )
+        }
+
+        try await snapshotter.capture(surface: surface, to: url)
+    }
+
+    private func clearPresentedVisualSurfaces(exceptRenderMode renderMode: String? = nil) {
+        if renderMode != "wkwebview" {
+            presentedWebView = nil
+            presentedWebSurfaceId = nil
+            presentedWebRevision = nil
+        }
+        if renderMode != "image" && renderMode != "pdf" {
+            presentedSurfaceView = nil
+            presentedSurfaceViewId = nil
+            presentedSurfaceViewRevision = nil
+        }
     }
 
     private func writeViewerState() {

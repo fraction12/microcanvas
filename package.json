@@ -1,8 +1,37 @@
 {
   "name": "microcanvas",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
+  "description": "A tiny file-first canvas runtime for AI tools.",
+  "license": "MIT",
   "type": "module",
+  "homepage": "https://github.com/fraction12/microcanvas#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fraction12/microcanvas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fraction12/microcanvas/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "canvas",
+    "cli",
+    "presentation",
+    "viewer"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "skills/microcanvas-present"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "microcanvas": "./dist/cli/index.js"
   },

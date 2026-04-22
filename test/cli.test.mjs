@@ -210,7 +210,7 @@ serialTest('show renders and activates csv as a deterministic html table surface
   assert.match(html, /<table class="data-table">/);
   assert.match(html, /color:\s*#17212b;/);
   assert.match(html, /<thead><tr><th scope="col">name<\/th><th scope="col">role<\/th><th scope="col">notes<\/th><\/tr><\/thead>/);
-  assert.match(html, /<tbody><tr><td>Dushyant<\/td><td>owner<\/td><td>Keeps scope tight<\/td><\/tr>/);
+  assert.match(html, /<tbody><tr><td>Atlas<\/td><td>owner<\/td><td>Keeps scope tight<\/td><\/tr>/);
   assert.match(html, /Uses &quot;escaped quotes&quot; cleanly/);
 });
 

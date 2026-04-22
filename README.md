@@ -1,4 +1,4 @@
-![Microcanvas banner](docs/assets/readme-banner.png)
+![Microcanvas banner](https://raw.githubusercontent.com/fraction12/microcanvas/main/docs/assets/readme-banner.png)
 
 # microcanvas
 
@@ -36,18 +36,17 @@ This repo is intentionally focused. It is not trying to be a full document suite
 
 ## Take It For A Spin
 
-Microcanvas is currently set up for local repo installs rather than npm publishing.
+Install the CLI from npm:
 
 ```bash
-npm install
-npm link
+npm install -g microcanvas
 microcanvas show README.md
 microcanvas status --json
 ```
 
 That gives you the happy-path tour:
 
-- `npm link` installs the repo-local CLI as `microcanvas`
+- `npm install -g microcanvas` installs the CLI globally
 - `show README.md` opens this README as the active surface
 - `status --json` reports the runtime and viewer state in a tool-friendly format
 
@@ -57,12 +56,6 @@ Once a surface is active, the next useful moves are:
 microcanvas update README.md
 microcanvas verify --json
 microcanvas snapshot --json
-```
-
-If you want to undo the local install later, run:
-
-```bash
-npm unlink -g microcanvas
 ```
 
 ## Quick Command Tour
@@ -233,7 +226,7 @@ Microcanvas is usable early-stage software, so a few edges are still showing:
 - only one active window and one active surface are supported at a time
 - `verify` and `snapshot` are intentionally strict about native viewer capability
 - unsupported formats fail clearly instead of being guessed into submission
-- the package is not published yet; right now the easiest path is running from source
+- the package is published for CLI use, while native viewer capability remains macOS-first
 
 ## Agent Skill
 
@@ -257,7 +250,6 @@ For concrete agent flows, see `skills/microcanvas-present/references/cookbook.md
 
 ```bash
 npm install
-npm link
 npm run check
 npm test
 ```

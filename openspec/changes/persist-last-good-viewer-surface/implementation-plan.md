@@ -590,7 +590,7 @@ node dist/cli/index.js show test/fixtures/inside.md --json
 sleep 1
 node dist/cli/index.js show test/fixtures/viewer-wide-table.csv --json
 sleep 1
-pkill -f '/Users/dushyant_jarvis/.codex/worktrees/3293/microcanvas/apps/macos-viewer/MicrocanvasViewer/.build/arm64-apple-macosx/debug/MicrocanvasViewer' || true
+pkill -f 'MicrocanvasViewer/.build/.*/MicrocanvasViewer' || true
 node dist/cli/index.js show test/fixtures/test-image.jpg --json
 sleep 1
 node dist/cli/index.js snapshot --json

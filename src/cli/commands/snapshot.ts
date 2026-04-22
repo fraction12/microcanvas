@@ -5,7 +5,11 @@ import path from 'node:path';
 import { paths } from '../../core/paths.js';
 import { readState } from '../../core/state.js';
 import type { SurfaceManifest } from '../../core/manifest.js';
-import { requestViewerSnapshot } from '../../viewer/snapshot.js';
+import {
+  HOLD_LAST_GOOD_SNAPSHOT_MESSAGE,
+  HOLD_LAST_GOOD_SNAPSHOT_WARNING,
+  requestViewerSnapshot
+} from '../../viewer/snapshot.js';
 import { getViewerState } from '../../viewer/state.js';
 import { operationalFailure, successResult, type MicrocanvasRecord } from '../contracts.js';
 
@@ -41,7 +45,7 @@ export async function runSnapshot(): Promise<CommandResult<MicrocanvasRecord>> {
       verified: !degraded,
       record: {
         message: degraded
-          ? 'snapshot captured, but capture readiness was degraded'
+          ? HOLD_LAST_GOOD_SNAPSHOT_MESSAGE
           : 'snapshot captured',
         surfaceId: manifest.surfaceId,
         viewer: {
@@ -58,7 +62,7 @@ export async function runSnapshot(): Promise<CommandResult<MicrocanvasRecord>> {
         }
       },
       warnings: degraded
-        ? [snapshot.warning ?? 'Snapshot captured while capture readiness was degraded.']
+        ? [snapshot.warning ?? HOLD_LAST_GOOD_SNAPSHOT_WARNING]
         : undefined
     });
 

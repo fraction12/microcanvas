@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { getViewerOpenStatus } from '../dist/viewer/state.js';
 import { requestViewerSnapshot } from '../dist/viewer/snapshot.js';
+import { runSnapshot } from '../dist/cli/commands/snapshot.js';
 
 process.env.MICROCANVAS_NATIVE_VIEWER_PID = String(process.pid);
 
@@ -85,6 +86,23 @@ function writeActiveManifest(surfaceId, overrides = {}) {
     renderMode: 'wkwebview',
     ...overrides
   }, null, 2));
+}
+
+async function waitForViewerRequest(timeoutMs = 4000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (fs.existsSync(viewerRequestFile)) {
+      try {
+        return JSON.parse(fs.readFileSync(viewerRequestFile, 'utf8'));
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        continue;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  return undefined;
 }
 
 function expectSuccess(result) {
@@ -316,26 +334,19 @@ test('snapshot writes a snapshot artifact for the active surface when native vie
   });
 
   const pending = runCli(['snapshot']);
+  const request = await waitForViewerRequest();
 
-  let request;
-  for (let i = 0; i < 20; i += 1) {
-    if (fs.existsSync(viewerRequestFile)) {
-      request = JSON.parse(fs.readFileSync(viewerRequestFile, 'utf8'));
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+  if (request) {
+    assert.equal(request.expectedViewerPid, process.pid);
+    fs.writeFileSync(request.snapshotPath, 'fake-png-data');
+    fs.writeFileSync(viewerResponseFile, JSON.stringify({
+      requestId: request.requestId,
+      ok: true,
+      captureState: 'fresh',
+      snapshotPath: request.snapshotPath,
+      completedAt: new Date().toISOString()
+    }, null, 2));
   }
-
-  assert.ok(request);
-  assert.equal(request.expectedViewerPid, process.pid);
-  fs.writeFileSync(request.snapshotPath, 'fake-png-data');
-  fs.writeFileSync(viewerResponseFile, JSON.stringify({
-    requestId: request.requestId,
-    ok: true,
-    captureState: 'fresh',
-    snapshotPath: request.snapshotPath,
-    completedAt: new Date().toISOString()
-  }, null, 2));
 
   const snapshot = await pending;
   const record = expectSuccess(snapshot);
@@ -430,7 +441,7 @@ test('snapshot fails clearly when only degraded viewer mode is available', async
   assert.match(error.message, /native viewer|degraded/i);
 });
 
-test('snapshot succeeds with degraded capture readiness from a native viewer handshake', async () => {
+test('snapshot surfaces degraded warning when native viewer is holding prior content', async () => {
   const shown = await runCli(['show', insideFile]);
   const shownRecord = expectSuccess(shown);
 
@@ -440,16 +451,9 @@ test('snapshot succeeds with degraded capture readiness from a native viewer han
     activeSurfaceId: shownRecord.surfaceId
   });
 
-  const pending = runCli(['snapshot']);
+  const pending = runSnapshot();
 
-  let request;
-  for (let i = 0; i < 20; i += 1) {
-    if (fs.existsSync(viewerRequestFile)) {
-      request = JSON.parse(fs.readFileSync(viewerRequestFile, 'utf8'));
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
+  const request = await waitForViewerRequest();
 
   assert.ok(request);
   fs.writeFileSync(request.snapshotPath, 'fake-png-data');
@@ -457,7 +461,7 @@ test('snapshot succeeds with degraded capture readiness from a native viewer han
     requestId: request.requestId,
     ok: true,
     captureState: 'degraded',
-    warning: 'Snapshot captured while capture readiness was degraded.',
+    warning: 'Snapshot captured from held last good content while newer content was not ready.',
     snapshotPath: request.snapshotPath,
     completedAt: new Date().toISOString()
   }, null, 2));
@@ -471,8 +475,9 @@ test('snapshot succeeds with degraded capture readiness from a native viewer han
   assert.ok(record.artifacts.snapshot);
   assert.ok(fs.existsSync(record.artifacts.snapshot));
   assert.ok((snapshot.warnings ?? []).length > 0);
-  assert.match((snapshot.warnings ?? []).join('\n'), /capture readiness was degraded/i);
-  assert.match(record.message, /capture readiness was degraded/i);
+  assert.match((snapshot.warnings ?? []).join('\n'), /held last good content/i);
+  assert.match(record.message, /held the last good surface/i);
+  assert.match(record.message, /newer content was not ready/i);
 });
 
 test('requestViewerSnapshot writes request and resolves response handshake', async () => {
@@ -484,14 +489,7 @@ test('requestViewerSnapshot writes request and resolves response handshake', asy
 
   const pending = requestViewerSnapshot('surface-test', 2000);
 
-  let request;
-  for (let i = 0; i < 20; i += 1) {
-    if (fs.existsSync(viewerRequestFile)) {
-      request = JSON.parse(fs.readFileSync(viewerRequestFile, 'utf8'));
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
+  const request = await waitForViewerRequest();
 
   assert.ok(request);
   assert.equal(request.type, 'snapshot');
@@ -510,6 +508,35 @@ test('requestViewerSnapshot writes request and resolves response handshake', asy
   assert.equal(snapshot.captureState, 'fresh');
   assert.equal(snapshot.warning, undefined);
   assert.ok(fs.existsSync(snapshot.snapshotPath));
+});
+
+test('requestViewerSnapshot tolerates a transient malformed viewer response', async () => {
+  writeViewerState({
+    pid: process.pid,
+    lastSeenAt: new Date().toISOString(),
+    activeSurfaceId: 'surface-test'
+  });
+
+  const pending = requestViewerSnapshot('surface-test', 2000);
+  const request = await waitForViewerRequest();
+
+  assert.ok(request);
+  fs.writeFileSync(viewerResponseFile, '{"requestId":');
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  fs.writeFileSync(request.snapshotPath, 'fake-png-data');
+  fs.writeFileSync(viewerResponseFile, JSON.stringify({
+    requestId: request.requestId,
+    ok: true,
+    captureState: 'degraded',
+    snapshotPath: request.snapshotPath,
+    completedAt: new Date().toISOString()
+  }, null, 2));
+
+  const snapshot = await pending;
+  assert.equal(snapshot.snapshotPath, request.snapshotPath);
+  assert.equal(snapshot.captureState, 'degraded');
+  assert.match(snapshot.warning ?? '', /held last good content/i);
 });
 
 test('human help output is command-aware', async () => {

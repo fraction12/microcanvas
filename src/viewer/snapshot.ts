@@ -5,6 +5,10 @@ import { paths } from '../core/paths.js';
 import { hasNativeViewerCapability } from './state.js';
 
 export type SnapshotCaptureState = 'fresh' | 'degraded';
+export const HOLD_LAST_GOOD_SNAPSHOT_WARNING =
+  'Snapshot captured from held last good content while newer content was not ready.';
+export const HOLD_LAST_GOOD_SNAPSHOT_MESSAGE =
+  'snapshot captured, but newer content was not ready and the viewer held the last good surface';
 
 interface SnapshotRequest {
   type: 'snapshot';
@@ -68,7 +72,14 @@ export async function requestViewerSnapshot(surfaceId: string, timeoutMs = 5000)
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     if (fs.existsSync(paths.viewerResponseFile)) {
-      const response = JSON.parse(fs.readFileSync(paths.viewerResponseFile, 'utf8')) as SnapshotResponse;
+      let response: SnapshotResponse;
+      try {
+        response = JSON.parse(fs.readFileSync(paths.viewerResponseFile, 'utf8')) as SnapshotResponse;
+      } catch {
+        await sleep(100);
+        continue;
+      }
+
       if (response.requestId === requestId) {
         fs.rmSync(paths.viewerRequestFile, { force: true });
         fs.rmSync(paths.viewerResponseFile, { force: true });
@@ -78,7 +89,10 @@ export async function requestViewerSnapshot(surfaceId: string, timeoutMs = 5000)
         return {
           snapshotPath: response.snapshotPath,
           captureState: response.captureState ?? 'fresh',
-          warning: response.warning
+          warning:
+            response.captureState === 'degraded'
+              ? response.warning ?? HOLD_LAST_GOOD_SNAPSHOT_WARNING
+          : response.warning
         };
       }
     }

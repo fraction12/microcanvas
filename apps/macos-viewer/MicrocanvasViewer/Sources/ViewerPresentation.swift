@@ -28,16 +28,20 @@ struct ViewerPresentation: Equatable {
         if let loadFailureMessage {
             self.title = manifest?.title ?? "Microcanvas Viewer"
             self.subtitle = statusText
-            self.badgeText = manifest.map(Self.badgeText)
+            self.badgeText = manifest.map(Self.badgeText(for:))
             self.timestampText = manifest.flatMap { Self.timestampText(from: $0.updatedAt) }
-            self.body = .placeholder(
-                ViewerPlaceholder(
-                    title: "Viewer Error",
-                    message: loadFailureMessage,
-                    symbolName: "xmark.octagon",
-                    detail: manifest?.title
+            if manifest != nil, activeURL != nil {
+                self.body = .surface
+            } else {
+                self.body = .placeholder(
+                    ViewerPlaceholder(
+                        title: "Viewer Error",
+                        message: loadFailureMessage,
+                        symbolName: "xmark.octagon",
+                        detail: manifest?.title
+                    )
                 )
-            )
+            }
             return
         }
 

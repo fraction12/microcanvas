@@ -59,6 +59,7 @@ final class ViewerModel: ObservableObject {
     private var lastSeenUpdatedAt: String?
     private var lastSnapshotRequestId: String?
     private let repoRootOverride: URL?
+    private let lastGoodSurfaceStore = LastGoodSurfaceStore()
 
     var overlayMessage: String? {
         readiness.overlayMessage
@@ -102,13 +103,16 @@ final class ViewerModel: ObservableObject {
                 .appendingPathComponent("manifest.json", isDirectory: false)
 
             guard fileManager.fileExists(atPath: manifestURL.path) else {
-                manifest = nil
-                activeURL = nil
-                pendingManifest = nil
-                pendingURL = nil
-                loadFailureMessage = nil
-                readiness = ViewerReadinessCoordinator()
-                statusText = "No active surface"
+                if !holdCurrentPresentation("Holding last surface")
+                    && !restoreLastGoodSurfaceIfPossible(in: runtimeRoot) {
+                    manifest = nil
+                    activeURL = nil
+                    pendingManifest = nil
+                    pendingURL = nil
+                    loadFailureMessage = nil
+                    readiness = ViewerReadinessCoordinator()
+                    statusText = "No active surface"
+                }
                 writeViewerState()
                 return
             }
@@ -119,13 +123,16 @@ final class ViewerModel: ObservableObject {
                 .appendingPathComponent("active", isDirectory: true)
                 .appendingPathComponent(decoded.entryPath, isDirectory: false)
             if !fileManager.fileExists(atPath: resolvedURL.path) {
-                manifest = decoded
-                activeURL = nil
-                pendingManifest = nil
-                pendingURL = nil
-                loadFailureMessage = nil
-                readiness = ViewerReadinessCoordinator()
-                statusText = "Active surface entry is missing"
+                if !holdCurrentPresentation("Holding last surface")
+                    && !restoreLastGoodSurfaceIfPossible(in: runtimeRoot) {
+                    manifest = decoded
+                    activeURL = nil
+                    pendingManifest = nil
+                    pendingURL = nil
+                    loadFailureMessage = nil
+                    readiness = ViewerReadinessCoordinator()
+                    statusText = "Active surface entry is missing"
+                }
                 writeViewerState()
                 return
             }
@@ -150,17 +157,20 @@ final class ViewerModel: ObservableObject {
                 } else {
                     readiness = ViewerReadinessCoordinator()
                     statusText = decoded.title
+                    persistPresentedSurface(in: runtimeRoot)
                 }
             }
             writeViewerState()
         } catch {
-            manifest = nil
-            activeURL = nil
-            pendingManifest = nil
-            pendingURL = nil
-            readiness = ViewerReadinessCoordinator()
-            statusText = "Viewer error"
-            loadFailureMessage = error.localizedDescription
+            if !holdCurrentPresentation("Viewer error", loadFailureMessage: error.localizedDescription) {
+                manifest = nil
+                activeURL = nil
+                pendingManifest = nil
+                pendingURL = nil
+                readiness = ViewerReadinessCoordinator()
+                statusText = "Viewer error"
+                loadFailureMessage = error.localizedDescription
+            }
             writeViewerState()
         }
     }
@@ -182,6 +192,7 @@ final class ViewerModel: ObservableObject {
 
         loadFailureMessage = nil
         statusText = manifest?.title ?? "Surface ready"
+        persistPresentedSurface()
         writeViewerState()
         return true
     }
@@ -193,8 +204,98 @@ final class ViewerModel: ObservableObject {
             return
         }
 
-        statusText = "Failed to load updated surface: \(description)"
+        _ = holdCurrentPresentation(
+            "Failed to load updated surface: \(description)",
+            loadFailureMessage: description
+        )
         writeViewerState()
+    }
+
+    private func holdCurrentPresentation(_ message: String, loadFailureMessage: String? = nil) -> Bool {
+        guard let manifest, activeURL != nil else {
+            return false
+        }
+
+        pendingManifest = nil
+        pendingURL = nil
+        reseedReadinessForCurrentSurface(manifest: manifest)
+        statusText = message
+        self.loadFailureMessage = loadFailureMessage
+        return true
+    }
+
+    private func restoreLastGoodSurfaceIfPossible(in runtimeRoot: URL) -> Bool {
+        guard manifest == nil, activeURL == nil else {
+            return false
+        }
+
+        guard let record = try? lastGoodSurfaceStore.loadRecoverableRecord(in: runtimeRoot) else {
+            return false
+        }
+
+        let restoredManifest = SurfaceManifest(
+            surfaceId: record.surfaceId,
+            title: record.title,
+            contentType: Self.contentType(for: record.renderMode),
+            entryPath: URL(fileURLWithPath: record.artifactPath).lastPathComponent,
+            createdAt: record.updatedAt,
+            updatedAt: record.updatedAt,
+            sourceKind: "restored",
+            renderMode: record.renderMode
+        )
+        manifest = restoredManifest
+        activeURL = URL(fileURLWithPath: record.artifactPath, isDirectory: false)
+        pendingManifest = nil
+        pendingURL = nil
+        if restoredManifest.renderMode == "wkwebview" {
+            readiness.beginReload(surfaceId: restoredManifest.surfaceId, revision: restoredManifest.updatedAt)
+        } else {
+            readiness = ViewerReadinessCoordinator()
+            persistPresentedSurface(in: runtimeRoot)
+        }
+        statusText = "Holding last surface"
+        loadFailureMessage = nil
+        return true
+    }
+
+    private func persistPresentedSurface(in runtimeRoot: URL? = nil) {
+        guard let manifest, let activeURL else {
+            return
+        }
+
+        let resolvedRuntimeRoot: URL
+        do {
+            if let runtimeRoot {
+                resolvedRuntimeRoot = runtimeRoot
+            } else {
+                resolvedRuntimeRoot = try locateRepoRoot().appendingPathComponent("runtime", isDirectory: true)
+            }
+
+            try lastGoodSurfaceStore.save(
+                LastGoodSurfaceRecord(
+                    surfaceId: manifest.surfaceId,
+                    title: manifest.title,
+                    renderMode: manifest.renderMode,
+                    updatedAt: manifest.updatedAt,
+                    artifactPath: activeURL.path
+                ),
+                in: resolvedRuntimeRoot
+            )
+        } catch {
+            return
+        }
+    }
+
+    private func reseedReadinessForCurrentSurface(manifest: SurfaceManifest) {
+        guard manifest.renderMode == "wkwebview" else {
+            readiness = ViewerReadinessCoordinator()
+            return
+        }
+
+        var coordinator = ViewerReadinessCoordinator()
+        coordinator.beginReload(surfaceId: manifest.surfaceId, revision: manifest.updatedAt)
+        _ = coordinator.didPresentReadySurface(surfaceId: manifest.surfaceId, revision: manifest.updatedAt)
+        readiness = coordinator
     }
 
     private func pollRuntimeState() {
@@ -442,5 +543,18 @@ final class ViewerModel: ObservableObject {
             return nil
         }
         return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
+    }
+
+    private static func contentType(for renderMode: String) -> String {
+        switch renderMode {
+        case "wkwebview":
+            return "text/html"
+        case "pdf":
+            return "application/pdf"
+        case "image":
+            return "image/*"
+        default:
+            return "application/octet-stream"
+        }
     }
 }

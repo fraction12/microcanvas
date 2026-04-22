@@ -79,6 +79,30 @@ final class ViewerPresentationTests: XCTestCase {
         )
     }
 
+    func testLoadFailureKeepsSurfaceBodyWhenCurrentSurfaceStillExists() {
+        let manifest = SurfaceManifest(
+            surfaceId: "surface-3",
+            title: "Still Visible",
+            contentType: "text/html",
+            entryPath: "index.html",
+            createdAt: "2026-04-21T18:55:00Z",
+            updatedAt: "2026-04-21T19:00:00Z",
+            sourceKind: "generated",
+            renderMode: "wkwebview"
+        )
+
+        let presentation = ViewerPresentation(
+            manifest: manifest,
+            activeURL: URL(fileURLWithPath: "/tmp/index.html"),
+            statusText: "Failed to load updated surface: timed out",
+            loadFailureMessage: "timed out"
+        )
+
+        XCTAssertEqual(presentation.title, "Still Visible")
+        XCTAssertEqual(presentation.subtitle, "Failed to load updated surface: timed out")
+        XCTAssertEqual(presentation.body, .surface)
+    }
+
     func testHeaderIncludesFormattedTimestampForActiveSurface() {
         let manifest = SurfaceManifest(
             surfaceId: "surface-1",
@@ -101,6 +125,30 @@ final class ViewerPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.title, "Render Preview")
         XCTAssertEqual(presentation.badgeText, "WEB")
         XCTAssertEqual(presentation.timestampText, "Updated 2026-04-21 19:05")
+        XCTAssertEqual(presentation.body, .surface)
+    }
+
+    func testHoldStateKeepsRenderingSurfaceBody() {
+        let manifest = SurfaceManifest(
+            surfaceId: "surface-2",
+            title: "Sticky Surface",
+            contentType: "text/html",
+            entryPath: "index.html",
+            createdAt: "2026-04-21T18:55:00Z",
+            updatedAt: "2026-04-21T19:15:00Z",
+            sourceKind: "generated",
+            renderMode: "wkwebview"
+        )
+
+        let presentation = ViewerPresentation(
+            manifest: manifest,
+            activeURL: URL(fileURLWithPath: "/tmp/index.html"),
+            statusText: "Holding last surface",
+            loadFailureMessage: nil
+        )
+
+        XCTAssertEqual(presentation.title, "Sticky Surface")
+        XCTAssertEqual(presentation.subtitle, "Holding last surface")
         XCTAssertEqual(presentation.body, .surface)
     }
 }

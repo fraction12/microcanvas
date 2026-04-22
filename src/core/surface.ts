@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { marked } from 'marked';
+import sanitizeHtml from 'sanitize-html';
 import { paths } from './paths.js';
 import type { SurfaceManifest } from './manifest.js';
 import { createManifest } from './manifest.js';
@@ -107,8 +108,32 @@ const surfaceAdapters: SurfaceAdapter[] = [
   }
 ];
 
+function ensurePathHasNoSymlinkSegments(resolvedPath: string, rootPath: string): void {
+  const relative = path.relative(rootPath, resolvedPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return;
+  }
+
+  const segments = relative.split(path.sep).filter(Boolean);
+  let current = rootPath;
+
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    const stats = fs.lstatSync(current);
+    if (stats.isSymbolicLink()) {
+      throw new Error(`Symlink paths are not allowed: ${resolvedPath}`);
+    }
+  }
+}
+
 function ensureSafeResolvedPath(inputPath: string): string {
   const resolved = path.resolve(inputPath);
+  const containingRoot = allowedRoots.find((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`));
+  if (!containingRoot) {
+    throw new Error(`Path escapes allowed roots: ${inputPath}`);
+  }
+
+  ensurePathHasNoSymlinkSegments(resolved, containingRoot);
   const real = fs.realpathSync(resolved);
 
   const insideAllowedRoot = allowedRoots.some((root) => {
@@ -118,11 +143,6 @@ function ensureSafeResolvedPath(inputPath: string): string {
 
   if (!insideAllowedRoot) {
     throw new Error(`Path escapes allowed roots: ${inputPath}`);
-  }
-
-  const stats = fs.lstatSync(real);
-  if (stats.isSymbolicLink()) {
-    throw new Error(`Symlink paths are not allowed: ${inputPath}`);
   }
 
   return real;
@@ -273,6 +293,32 @@ function wrapSurfaceContent(content: string, options: { surfaceKind: 'generated'
 </main>`;
 }
 
+function sanitizeSurfaceHtml(html: string): string {
+  return sanitizeHtml(html, {
+    allowedTags: [
+      'a', 'abbr', 'article', 'aside', 'b', 'blockquote', 'br', 'caption', 'code', 'col', 'colgroup',
+      'dd', 'del', 'details', 'div', 'dl', 'dt', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4',
+      'h5', 'h6', 'hr', 'i', 'img', 'kbd', 'li', 'main', 'mark', 'ol', 'p', 'pre', 'q', 'rp', 'rt',
+      'ruby', 's', 'samp', 'section', 'small', 'span', 'strong', 'sub', 'summary', 'sup', 'table',
+      'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul'
+    ],
+    allowedAttributes: {
+      a: ['href', 'name', 'target', 'rel'],
+      img: ['src', 'alt', 'title', 'width', 'height'],
+      th: ['scope', 'colspan', 'rowspan'],
+      td: ['colspan', 'rowspan'],
+      col: ['span', 'width'],
+      colgroup: ['span'],
+      '*': []
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    allowedSchemesAppliedToAttributes: ['href', 'src'],
+    allowProtocolRelative: false,
+    disallowedTagsMode: 'discard',
+    parseStyleAttributes: false
+  });
+}
+
 function buildHtmlDocument(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -407,7 +453,7 @@ async function materializeArtifact(resolvedSource: string, targetPath: string, d
     const rendered = await marked.parse(path.extname(resolvedSource).toLowerCase() === '.md' || path.extname(resolvedSource).toLowerCase() === '.markdown'
       ? raw
       : `\`\`\`\n${raw}\n\`\`\``);
-    const html = buildHtmlDocument(title, wrapSurfaceContent(rendered, { surfaceKind: 'generated' }));
+    const html = buildHtmlDocument(title, wrapSurfaceContent(sanitizeSurfaceHtml(rendered), { surfaceKind: 'generated' }));
     fs.writeFileSync(targetPath, html);
     return;
   }
@@ -416,6 +462,13 @@ async function materializeArtifact(resolvedSource: string, targetPath: string, d
     const raw = fs.readFileSync(resolvedSource, 'utf8');
     const html = renderCsvTable(title, raw);
     fs.writeFileSync(targetPath, html);
+    return;
+  }
+
+  if (detected.contentType === 'text/html' && detected.sourceKind === 'html') {
+    const rawHtml = fs.readFileSync(resolvedSource, 'utf8');
+    const sanitized = buildHtmlDocument(title, wrapSurfaceContent(sanitizeSurfaceHtml(rawHtml), { surfaceKind: 'generated' }));
+    fs.writeFileSync(targetPath, sanitized);
     return;
   }
 

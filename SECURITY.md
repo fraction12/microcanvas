@@ -30,7 +30,19 @@ Because Microcanvas is early-stage, response times may vary, but good-faith repo
 
 Areas of particular interest include:
 
-- path traversal or filesystem escape bugs
+- path traversal, symlink-resolution bypasses, or other filesystem escape bugs
 - lock handling or state corruption issues
 - unsafe rendering or file handling behavior
 - viewer or snapshot flows that expose data unexpectedly
+
+## Current Security Posture
+
+Microcanvas now hardens the default local surface path in a few specific ways:
+
+- Markdown-rendered HTML, raw HTML, and wrapped code/text surfaces are sanitized before staging
+- the default macOS `WKWebView` presentation path disables JavaScript
+- local read access for web surfaces is scoped to the current staged active-surface directory
+- normal source materialization rejects symlinked source paths and symlinked ancestor directories
+
+Those defaults are meant to reduce obvious local-surface risk and keep product claims honest.
+They do **not** mean Microcanvas is a general sandbox for arbitrary hostile web content or a replacement for a hardened browser isolation boundary.

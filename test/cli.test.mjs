@@ -25,6 +25,11 @@ const insideFile = path.join(fixtureDir, 'inside.md');
 const updateFile = path.join(fixtureDir, 'updated.md');
 const unsupportedFile = path.join(fixtureDir, 'unsupported.zip');
 const csvFile = path.join(fixtureDir, 'sample-table.csv');
+const hostileMarkdownFile = path.join(fixtureDir, 'hostile.md');
+const hostileHtmlFile = path.join(fixtureDir, 'hostile.html');
+const symlinkSourceFile = path.join(fixtureDir, 'inside-link.md');
+const symlinkDir = path.join(fixtureDir, 'linked-dir');
+const symlinkNestedFile = path.join(symlinkDir, 'nested.md');
 const pngImageFile = path.join(fixtureDir, 'test-image.png');
 const jpgImageFile = path.join(fixtureDir, 'test-image.jpg');
 const gifImageFile = path.join(fixtureDir, 'test-image.gif');
@@ -158,8 +163,14 @@ test.before(() => {
   fs.mkdirSync(fixtureDir, { recursive: true });
   fs.writeFileSync(insideFile, '# Hello\n\nInside root fixture.\n');
   fs.writeFileSync(updateFile, '# Updated\n\nNew content.\n');
+  fs.writeFileSync(hostileMarkdownFile, '# hostile\n\n<script>alert(1)</script>\n\n[click](javascript:alert(2))\n\n<img src="file:///etc/passwd" onerror="alert(3)">\n');
+  fs.writeFileSync(hostileHtmlFile, '<!doctype html><html><body><h1>safe</h1><script>alert(1)</script><a href="javascript:alert(2)" onclick="alert(3)">x</a><img src="file:///etc/passwd" onerror="alert(4)"></body></html>');
   fs.writeFileSync(unsupportedFile, 'not really a zip, but good enough for extension coverage\n');
   fs.writeFileSync(outsideFile, 'outside root\n');
+  try { fs.rmSync(symlinkSourceFile, { force: true }); } catch {}
+  try { fs.rmSync(symlinkDir, { recursive: true, force: true }); } catch {}
+  fs.symlinkSync(insideFile, symlinkSourceFile);
+  fs.symlinkSync(fixtureDir, symlinkDir, 'dir');
 });
 
 test.beforeEach(() => {
@@ -186,6 +197,40 @@ serialTest('show renders and activates an inside-root markdown file with explici
   assert.match(html, /<article class="surface-card">/);
   assert.match(html, /color-scheme:\s*light;/);
   assert.match(html, /color:\s*#17212b;/);
+});
+
+serialTest('show sanitizes hostile markdown into safe-by-default html-like output', async () => {
+  const result = await runCli(['show', hostileMarkdownFile]);
+  const record = expectSuccess(result);
+
+  assertDisplayRecord(record, {
+    surfaceId: record.surfaceId,
+    primaryArtifact: path.join(activeDir, 'index.html')
+  });
+
+  const html = fs.readFileSync(path.join(activeDir, 'index.html'), 'utf8');
+  assert.doesNotMatch(html, /<script/i);
+  assert.doesNotMatch(html, /javascript:/i);
+  assert.doesNotMatch(html, /onerror=/i);
+  assert.doesNotMatch(html, /file:\/\/\/etc\/passwd/i);
+  assert.match(html, /<h1>hostile<\/h1>/i);
+});
+
+serialTest('show sanitizes raw html surfaces on the default presentation path', async () => {
+  const result = await runCli(['show', hostileHtmlFile]);
+  const record = expectSuccess(result);
+
+  assertDisplayRecord(record, {
+    surfaceId: record.surfaceId,
+    primaryArtifact: path.join(activeDir, 'index.html')
+  });
+
+  const html = fs.readFileSync(path.join(activeDir, 'index.html'), 'utf8');
+  assert.doesNotMatch(html, /<script/i);
+  assert.doesNotMatch(html, /javascript:/i);
+  assert.doesNotMatch(html, /onclick=/i);
+  assert.doesNotMatch(html, /file:\/\/\/etc\/passwd/i);
+  assert.match(html, /<h1>safe<\/h1>/i);
 });
 
 serialTest('show renders and activates csv as a deterministic html table surface', async () => {
@@ -360,6 +405,18 @@ serialTest('snapshot writes a snapshot artifact for the active surface when nati
   assert.ok(record.artifacts.snapshot);
   assert.ok(fs.existsSync(record.artifacts.snapshot));
   assert.equal(snapshot.verificationStatus, 'verified');
+});
+
+serialTest('symlinked source file is rejected through AgentTK failure metadata', async () => {
+  const result = await runCli(['show', symlinkSourceFile]);
+  const error = expectFailure(result, 'INVALID_INPUT');
+  assert.match(error.message, /Symlink paths are not allowed/);
+});
+
+serialTest('symlinked source ancestor directory is rejected through AgentTK failure metadata', async () => {
+  const result = await runCli(['show', symlinkNestedFile]);
+  const error = expectFailure(result, 'INVALID_INPUT');
+  assert.match(error.message, /Symlink paths are not allowed/);
 });
 
 serialTest('outside-root file is rejected through AgentTK failure metadata', async () => {

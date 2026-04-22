@@ -1,0 +1,6 @@
+name: harden-local-surface-security
+status: proposed
+created: 2026-04-22
+owners:
+  - Dushyant Garg
+summary: Harden Microcanvas local surface handling by sanitizing HTML-like content, disabling default web-surface script execution, narrowing file-read scope, and tightening path-safety guarantees.

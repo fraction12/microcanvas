@@ -36,26 +36,28 @@ This repo is intentionally focused. It is not trying to be a full document suite
 
 ## Take It For A Spin
 
-Install the CLI from npm:
+Microcanvas is repo-first for now. Clone it, build it locally, and run the CLI from source:
 
 ```bash
-npm install -g microcanvas
-microcanvas show README.md
-microcanvas status --json
+npm install
+npm run build
+node dist/cli/index.js show README.md
+node dist/cli/index.js status --json
 ```
 
 That gives you the happy-path tour:
 
-- `npm install -g microcanvas` installs the CLI globally
+- `npm install` pulls the local repo dependencies
+- `npm run build` compiles the CLI into `dist/`
 - `show README.md` opens this README as the active surface
 - `status --json` reports the runtime and viewer state in a tool-friendly format
 
 Once a surface is active, the next useful moves are:
 
 ```bash
-microcanvas update README.md
-microcanvas verify --json
-microcanvas snapshot --json
+node dist/cli/index.js update README.md
+node dist/cli/index.js verify --json
+node dist/cli/index.js snapshot --json
 ```
 
 ## Quick Command Tour
@@ -109,12 +111,12 @@ Microcanvas is deliberately honest about what it can display today.
 
 Supported now:
 
-- `.html`, `.htm`
-- `.md`, `.markdown`
+- `.html`, `.htm` through a sanitized safe-by-default local presentation path
+- `.md`, `.markdown` rendered to sanitized HTML
 - `.pdf`
 - `.csv` rendered into a deterministic HTML table surface
 - `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
-- `.txt`, `.json`, `.js`, `.ts` wrapped into an HTML code-view surface
+- `.txt`, `.json`, `.js`, `.ts` wrapped into a sanitized HTML code-view surface
 
 Not supported yet:
 
@@ -136,6 +138,7 @@ Microcanvas separates "something opened" from "the native viewer is fully availa
 This matters in practice:
 
 - `show` and `update` only report `native` after the viewer heartbeat confirms readiness, and the native app brings its window to the front when new content is presented when macOS allows it
+- local HTML-like surfaces are treated as presentation content by default: Microcanvas sanitizes rendered Markdown and raw HTML, disables JavaScript in the default `WKWebView` path, and limits local file reads to the active staged surface directory
 - if an older native viewer session is still hanging around, Microcanvas clears that stale session before trusting a new launch attempt
 - `show` and `update` can still succeed in degraded mode
 - `status` tells you what kind of runtime/viewer state you currently have
@@ -218,6 +221,19 @@ That gives tools a stable place to inspect:
 - whether native verification is currently possible
 - whether a write lock is held
 
+## Local Surface Security Defaults
+
+Microcanvas is file-first, not a general-purpose hostile-content sandbox.
+
+Current defaults are intentionally narrow and honest:
+
+- source files must resolve inside the repo root and may not use symlinked source paths or symlinked ancestor directories
+- Markdown, raw HTML, and wrapped code/text surfaces are sanitized before staging
+- the macOS native viewer disables JavaScript for the default local web-surface path
+- local web content can read only from the current staged active-surface directory, so any sibling assets must be intentionally materialized there
+
+That reduces obvious local-surface risk, but it does not claim to safely execute arbitrary untrusted web apps.
+
 ## Known Barnacles
 
 Microcanvas is usable early-stage software, so a few edges are still showing:
@@ -226,7 +242,7 @@ Microcanvas is usable early-stage software, so a few edges are still showing:
 - only one active window and one active surface are supported at a time
 - `verify` and `snapshot` are intentionally strict about native viewer capability
 - unsupported formats fail clearly instead of being guessed into submission
-- the package is published for CLI use, while native viewer capability remains macOS-first
+- the project is repo-first for now, while native viewer capability remains macOS-first
 
 ## Agent Skill
 

@@ -417,6 +417,29 @@ serialTest('status reports degraded mode and disabled verification capability wh
   assert.equal(record.artifacts.primary, path.join(activeDir, 'index.html'));
 });
 
+serialTest('fresh native heartbeat wins over stale degraded runtime mode', async () => {
+  writeRuntimeState({
+    activeSurfaceId: 'surface-native-wins',
+    viewerMode: 'degraded',
+    viewerOpen: true,
+    updatedAt: new Date().toISOString()
+  });
+  writeActiveManifest('surface-native-wins');
+  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>native wins</body></html>');
+  writeViewerState({
+    pid: process.pid,
+    lastSeenAt: new Date().toISOString(),
+    activeSurfaceId: 'surface-native-wins'
+  });
+
+  const status = await runCli(['status']);
+  const record = expectSuccess(status);
+  assert.equal(record.surfaceId, 'surface-native-wins');
+  assert.equal(record.viewer.mode, 'native');
+  assert.equal(record.viewer.canVerify, true);
+  assert.equal(record.viewer.open, true);
+});
+
 serialTest('stale viewer heartbeat alone does not report native-open status', async () => {
   writeRuntimeState({
     activeSurfaceId: 'surface-stale',

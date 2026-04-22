@@ -62,11 +62,6 @@ function getNativeViewerState(maxAgeMs = 5000): ViewerState | null {
 export function getViewerState(runtimeState: RuntimeState = readState(), maxAgeMs = 5000): ViewerState {
   const nativeViewer = getNativeViewerState(maxAgeMs);
   if (nativeViewer) {
-    if (runtimeState.viewerMode === 'degraded') {
-      return createViewerState('degraded', {
-        activeSurfaceId: runtimeState.activeSurfaceId
-      });
-    }
     return nativeViewer;
   }
 

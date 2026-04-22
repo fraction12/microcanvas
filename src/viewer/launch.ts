@@ -78,6 +78,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForNativeViewer(maxWaitMs = 1500): Promise<ViewerState | null> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < maxWaitMs) {
+    const viewer = getViewerState();
+    if (viewer.mode === 'native') {
+      return viewer;
+    }
+    await sleep(50);
+  }
+
+  return null;
+}
+
 async function stopStaleViewerSessions(binaryPath: string, runtimeState: RuntimeState): Promise<void> {
   const runtimeViewer = readViewerRuntimeState();
   if (!runtimeViewer) {
@@ -182,11 +195,12 @@ export async function launchViewer(entryPath?: string): Promise<ViewerState> {
   const binary = viewerBinaryPath();
   await stopStaleViewerSessions(binary, state);
 
+  let viewer: ViewerState | null = null;
   let viewerMode: ViewerState['mode'] = 'closed';
 
   if (launchNativeViewerBinary()) {
-    const viewer = getViewerState(state);
-    if (viewer.mode === 'native') {
+    viewer = await waitForNativeViewer();
+    if (viewer?.mode === 'native') {
       viewerMode = 'native';
     }
   }
@@ -195,11 +209,11 @@ export async function launchViewer(entryPath?: string): Promise<ViewerState> {
     viewerMode = 'degraded';
   }
 
-  const viewer = buildViewerState(viewerMode, state.activeSurfaceId);
+  viewer ??= buildViewerState(viewerMode, state.activeSurfaceId);
 
   writeState({
     ...state,
-    viewerMode,
+    viewerMode: viewer.mode,
     viewerOpen: viewer.open,
     updatedAt: new Date().toISOString()
   });

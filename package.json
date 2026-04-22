@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test --test-concurrency=1 test/*.test.mjs"
+    "test": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
+    "install:skills": "bash skills/microcanvas-present/scripts/install-agent-skill.sh"
   },
   "dependencies": {
     "agenttk": "^0.1.5",

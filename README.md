@@ -235,6 +235,24 @@ Microcanvas is usable early-stage software, so a few edges are still showing:
 - unsupported formats fail clearly instead of being guessed into submission
 - the package is not published yet; right now the easiest path is running from source
 
+## Agent Skill
+
+Microcanvas ships with a tracked agent skill at `skills/microcanvas-present/` so agents use the CLI the way it is actually meant to be used.
+
+Install local copies for common agent folders:
+
+```bash
+npm run install:skills
+```
+
+Use the repo-local wrapper directly when you want deterministic behavior:
+
+```bash
+skills/microcanvas-present/scripts/run-microcanvas.sh show README.md --json
+```
+
+For concrete agent flows, see `skills/microcanvas-present/references/cookbook.md`.
+
 ## Development
 
 ```bash

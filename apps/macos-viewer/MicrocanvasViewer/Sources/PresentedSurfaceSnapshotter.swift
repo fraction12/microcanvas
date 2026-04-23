@@ -288,8 +288,8 @@ private func renderPDFSnapshot(_ data: Data, targetSize: CGSize) throws -> NSIma
         currentTop -= pageHeight
 
         context.saveGState()
-        context.translateBy(x: 0, y: currentTop + pageHeight)
-        context.scaleBy(x: scale, y: -scale)
+        context.translateBy(x: 0, y: currentTop)
+        context.scaleBy(x: scale, y: scale)
         page.draw(with: .mediaBox, to: context)
         context.restoreGState()
     }

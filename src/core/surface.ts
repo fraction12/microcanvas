@@ -37,7 +37,7 @@ function unsupportedContent(message: string): never {
   throw new Error(`UNSUPPORTED_CONTENT: ${message}`);
 }
 
-const allowedRoots = [paths.repoRoot];
+const unsupportedPathSchemes = /^[a-zA-Z][a-zA-Z\d+.-]*:/;
 
 const surfaceAdapters: SurfaceAdapter[] = [
   {
@@ -108,7 +108,7 @@ const surfaceAdapters: SurfaceAdapter[] = [
   }
 ];
 
-function ensurePathHasNoSymlinkSegments(resolvedPath: string, rootPath: string): void {
+function ensurePathHasNoSymlinkSegments(resolvedPath: string, rootPath: string, options: { allowRootSymlink?: boolean } = {}): void {
   const relative = path.relative(rootPath, resolvedPath);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     return;
@@ -121,28 +121,42 @@ function ensurePathHasNoSymlinkSegments(resolvedPath: string, rootPath: string):
     current = path.join(current, segment);
     const stats = fs.lstatSync(current);
     if (stats.isSymbolicLink()) {
+      if (options.allowRootSymlink && current === path.join(rootPath, segments[0])) {
+        continue;
+      }
       throw new Error(`Symlink paths are not allowed: ${resolvedPath}`);
     }
   }
 }
 
 function ensureSafeResolvedPath(inputPath: string): string {
-  const resolved = path.resolve(inputPath);
-  const containingRoot = allowedRoots.find((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`));
-  if (!containingRoot) {
-    throw new Error(`Path escapes allowed roots: ${inputPath}`);
+  if (!inputPath.trim()) {
+    throw new Error('Source path must not be empty');
   }
 
-  ensurePathHasNoSymlinkSegments(resolved, containingRoot);
-  const real = fs.realpathSync(resolved);
+  if (unsupportedPathSchemes.test(inputPath)) {
+    throw new Error(`Unsupported source path scheme: ${inputPath}`);
+  }
 
-  const insideAllowedRoot = allowedRoots.some((root) => {
-    const realRoot = fs.realpathSync(root);
-    return real === realRoot || real.startsWith(`${realRoot}${path.sep}`);
-  });
+  const resolved = path.resolve(inputPath);
+  const repoRootResolved = fs.realpathSync(paths.repoRoot);
+  const insideRepo = resolved === repoRootResolved || resolved.startsWith(`${repoRootResolved}${path.sep}`);
+  const inspectPath = insideRepo ? resolved : inputPath;
+  const checkRoot = insideRepo ? repoRootResolved : path.parse(path.resolve(inspectPath)).root;
 
-  if (!insideAllowedRoot) {
-    throw new Error(`Path escapes allowed roots: ${inputPath}`);
+  ensurePathHasNoSymlinkSegments(path.resolve(inspectPath), checkRoot, { allowRootSymlink: !insideRepo });
+
+  let real: string;
+  try {
+    real = fs.realpathSync(resolved);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unable to resolve source path';
+    throw new Error(message);
+  }
+
+  const stats = fs.statSync(real);
+  if (!stats.isFile()) {
+    throw new Error(`Source path must be a file: ${inputPath}`);
   }
 
   return real;
@@ -499,12 +513,19 @@ export async function renderSurface(input: RenderInput): Promise<RenderedSurface
   const surfaceId = input.surfaceId ?? crypto.randomUUID();
   const stageDir = path.join(paths.stagingDir, surfaceId);
   const assetsDir = path.join(stageDir, 'assets');
+  const sourceDir = path.join(stageDir, 'source');
   fs.rmSync(stageDir, { recursive: true, force: true });
   fs.mkdirSync(assetsDir, { recursive: true });
+  fs.mkdirSync(sourceDir, { recursive: true });
 
   const detected = detectContentType(resolvedSource);
+  const stagedSourceName = path.basename(resolvedSource);
+  const stagedSourceRelativePath = path.join('source', stagedSourceName);
+  const stagedSourcePath = path.join(stageDir, stagedSourceRelativePath);
+  fs.copyFileSync(resolvedSource, stagedSourcePath);
+
   const targetPath = path.join(stageDir, detected.targetName);
-  await materializeArtifact(resolvedSource, targetPath, detected, title);
+  await materializeArtifact(stagedSourcePath, targetPath, detected, title);
 
   const manifest = createManifest({
     surfaceId,
@@ -512,7 +533,15 @@ export async function renderSurface(input: RenderInput): Promise<RenderedSurface
     contentType: detected.contentType,
     entryPath: detected.targetName,
     sourceKind: detected.sourceKind,
-    renderMode: detected.renderMode
+    renderMode: detected.renderMode,
+    source: {
+      originalPath: resolvedSource,
+      sourceFileName: stagedSourceName,
+      stagedPath: stagedSourcePath,
+      stagedRelativePath: stagedSourceRelativePath,
+      ingestedAt: new Date().toISOString(),
+      externalToRepo: !(resolvedSource === paths.repoRoot || resolvedSource.startsWith(`${paths.repoRoot}${path.sep}`))
+    }
   });
 
   fs.writeFileSync(path.join(stageDir, 'manifest.json'), JSON.stringify(manifest, null, 2));

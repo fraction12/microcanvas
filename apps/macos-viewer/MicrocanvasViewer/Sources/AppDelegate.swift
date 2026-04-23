@@ -11,10 +11,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     static func bringViewerToFront() {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        let application = NSApplication.shared
+        application.setActivationPolicy(.regular)
+        application.activate(ignoringOtherApps: true)
 
-        guard let window = sharedWindow ?? NSApp.windows.first else {
+        guard let window = sharedWindow ?? application.windows.first else {
             return
         }
 

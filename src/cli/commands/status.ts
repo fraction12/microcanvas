@@ -13,8 +13,14 @@ export function runStatus(): CommandResult<MicrocanvasRecord> {
   const lock = readLock();
   const manifestExists = fs.existsSync(paths.activeManifest);
   const viewer = getViewerState(state);
-  const primaryArtifact = manifestExists
-    ? path.join(paths.activeDir, (JSON.parse(fs.readFileSync(paths.activeManifest, 'utf8')) as SurfaceManifest).entryPath)
+  const manifest = manifestExists
+    ? (JSON.parse(fs.readFileSync(paths.activeManifest, 'utf8')) as SurfaceManifest)
+    : undefined;
+  const primaryArtifact = manifest
+    ? path.join(paths.activeDir, manifest.entryPath)
+    : undefined;
+  const stagedSource = manifest
+    ? path.join(paths.activeDir, manifest.source.stagedRelativePath)
     : undefined;
 
   return successResult({
@@ -34,8 +40,16 @@ export function runStatus(): CommandResult<MicrocanvasRecord> {
         reason: lock.reason
       },
       artifacts: {
-        primary: primaryArtifact
-      }
+        primary: primaryArtifact,
+        stagedSource
+      },
+      source: manifest
+        ? {
+            originalPath: manifest.source.originalPath,
+            stagedPath: stagedSource!,
+            externalToRepo: manifest.source.externalToRepo
+          }
+        : undefined
     }
   });
 }

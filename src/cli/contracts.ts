@@ -23,6 +23,12 @@ export interface MicrocanvasRecord {
   artifacts?: {
     primary?: string;
     snapshot?: string;
+    stagedSource?: string;
+  };
+  source?: {
+    originalPath: string;
+    stagedPath: string;
+    externalToRepo: boolean;
   };
 }
 

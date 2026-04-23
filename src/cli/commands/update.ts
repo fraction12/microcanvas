@@ -1,6 +1,8 @@
 import type { CommandResult } from 'agenttk';
 import { markUnverified } from 'agenttk';
+import path from 'node:path';
 import { acquireLock, readLock, releaseLock } from '../../core/lock.js';
+import { paths } from '../../core/paths.js';
 import { readState, writeState } from '../../core/state.js';
 import { updateActiveSurface } from '../../core/surface.js';
 import { launchViewer } from '../../viewer/launch.js';
@@ -56,7 +58,13 @@ export async function runUpdate(sourcePath?: string): Promise<CommandResult<Micr
           held: readLock().held
         },
         artifacts: {
-          primary: updated.primaryArtifact
+          primary: updated.primaryArtifact,
+          stagedSource: path.join(paths.activeDir, updated.manifest.source.stagedRelativePath)
+        },
+        source: {
+          originalPath: updated.manifest.source.originalPath,
+          stagedPath: path.join(paths.activeDir, updated.manifest.source.stagedRelativePath),
+          externalToRepo: updated.manifest.source.externalToRepo
         }
       },
       warnings: viewer.mode === 'degraded'

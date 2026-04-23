@@ -5,25 +5,30 @@ import WebKit
 
 @MainActor
 final class PresentedSurfaceSnapshotterTests: XCTestCase {
-    func testSnapshotImageSurfaceUsesPresentedViewHook() async throws {
+    func testSnapshotImageSurfaceUsesImageFileHook() async throws {
         let root = makeRoot()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
+        let source = root.appendingPathComponent("source.png", isDirectory: false)
         let destination = root.appendingPathComponent("snapshot.png", isDirectory: false)
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
-        var capturedView: NSView?
+        let sourceImage = makeSolidImage(color: .systemRed, size: NSSize(width: 48, height: 24))
+        try writePNG(sourceImage, to: source)
+
+        var capturedURL: URL?
         let snapshotter = PresentedSurfaceSnapshotter(
-            capturePresentedView: { candidate in
-                capturedView = candidate
-                return self.makeSolidImage(color: .systemRed, size: NSSize(width: 32, height: 32))
+            captureImageFile: { candidate in
+                capturedURL = candidate
+                return sourceImage
             }
         )
 
-        try await snapshotter.capture(surface: .imageView(view), to: destination)
+        try await snapshotter.capture(surface: .imageFile(source), to: destination)
 
-        XCTAssertTrue(capturedView === view)
+        XCTAssertEqual(capturedURL, source)
         XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
-        XCTAssertNotNil(NSImage(contentsOf: destination))
+        let rendered = try XCTUnwrap(NSImage(contentsOf: destination))
+        XCTAssertEqual(rendered.size.width, 48)
+        XCTAssertEqual(rendered.size.height, 24)
     }
 
     func testSnapshotPDFSurfaceUsesPresentedViewHook() async throws {
@@ -47,23 +52,24 @@ final class PresentedSurfaceSnapshotterTests: XCTestCase {
         XCTAssertNotNil(NSImage(contentsOf: destination))
     }
 
-    func testSnapshotWebSurfaceUsesPresentedWebView() async throws {
+    func testSnapshotWebSurfaceUsesWebContentHook() async throws {
         let root = makeRoot()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
+        let source = root.appendingPathComponent("index.html", isDirectory: false)
+        try Data("<html><body>fixture</body></html>".utf8).write(to: source)
         let destination = root.appendingPathComponent("snapshot.png", isDirectory: false)
-        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
-        var capturedWebView: WKWebView?
+        var capturedURL: URL?
         let snapshotter = PresentedSurfaceSnapshotter(
-            captureWebView: { candidate in
-                capturedWebView = candidate
+            captureWebContent: { candidate in
+                capturedURL = candidate
                 return self.makeSolidImage(color: .systemBlue, size: NSSize(width: 32, height: 32))
             }
         )
 
-        try await snapshotter.capture(surface: .webView(webView), to: destination)
+        try await snapshotter.capture(surface: .webContent(source), to: destination)
 
-        XCTAssertTrue(capturedWebView === webView)
+        XCTAssertEqual(capturedURL, source)
         XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
         XCTAssertNotNil(NSImage(contentsOf: destination))
     }
@@ -84,7 +90,7 @@ final class PresentedSurfaceSnapshotterTests: XCTestCase {
         let model = ViewerModel(
             repoRootOverride: root,
             snapshotter: PresentedSurfaceSnapshotter(
-                capturePresentedView: { _ in
+                captureImageFile: { _ in
                     await gate.wait()
                     return self.makeSolidImage(color: .systemOrange, size: NSSize(width: 32, height: 32))
                 }
@@ -155,7 +161,7 @@ final class PresentedSurfaceSnapshotterTests: XCTestCase {
         let model = ViewerModel(
             repoRootOverride: root,
             snapshotter: PresentedSurfaceSnapshotter(
-                capturePresentedView: { _ in
+                captureImageFile: { _ in
                     let index = await sequencer.nextCaptureIndex()
                     let color: NSColor = index == 1 ? .systemRed : .systemBlue
                     return self.makeSolidImage(color: color, size: NSSize(width: 32, height: 32))
@@ -231,7 +237,7 @@ final class PresentedSurfaceSnapshotterTests: XCTestCase {
         let model = ViewerModel(
             repoRootOverride: root,
             snapshotter: PresentedSurfaceSnapshotter(
-                capturePresentedView: { _ in
+                captureImageFile: { _ in
                     self.makeSolidImage(color: .systemPurple, size: NSSize(width: 32, height: 32))
                 }
             )
@@ -288,6 +294,17 @@ final class PresentedSurfaceSnapshotterTests: XCTestCase {
         NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
         image.unlockFocus()
         return image
+    }
+
+    private func writePNG(_ image: NSImage, to destination: URL) throws {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else {
+            XCTFail("Unable to encode fixture image as PNG")
+            throw CancellationError()
+        }
+
+        try png.write(to: destination)
     }
 
     private func writeRequest(_ request: SnapshotRequest, in runtimeRoot: URL) throws {

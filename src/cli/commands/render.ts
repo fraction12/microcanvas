@@ -25,7 +25,13 @@ export async function runRender(sourcePath?: string): Promise<CommandResult<Micr
           held: false
         },
         artifacts: {
-          primary: rendered.primaryArtifact
+          primary: rendered.primaryArtifact,
+          stagedSource: rendered.manifest.source.stagedPath
+        },
+        source: {
+          originalPath: rendered.manifest.source.originalPath,
+          stagedPath: rendered.manifest.source.stagedPath,
+          externalToRepo: rendered.manifest.source.externalToRepo
         }
       }
     });

@@ -91,6 +91,14 @@ function writeActiveManifest(surfaceId, overrides = {}) {
     updatedAt: new Date().toISOString(),
     sourceKind: 'generated',
     renderMode: 'wkwebview',
+    source: {
+      originalPath: insideFile,
+      sourceFileName: path.basename(insideFile),
+      stagedPath: path.join(activeDir, 'source', path.basename(insideFile)),
+      stagedRelativePath: path.join('source', path.basename(insideFile)),
+      ingestedAt: new Date().toISOString(),
+      externalToRepo: false
+    },
     ...overrides
   }, null, 2));
 }
@@ -419,10 +427,68 @@ serialTest('symlinked source ancestor directory is rejected through AgentTK fail
   assert.match(error.message, /Symlink paths are not allowed/);
 });
 
-serialTest('outside-root file is rejected through AgentTK failure metadata', async () => {
+serialTest('outside-repo file is ingested and shown from Microcanvas-owned active paths', async () => {
   const result = await runCli(['show', outsideFile]);
+  const record = expectSuccess(result);
+
+  assertDisplayRecord(record, {
+    surfaceId: record.surfaceId,
+    primaryArtifact: path.join(activeDir, 'index.html')
+  });
+  assert.equal(record.source.externalToRepo, true);
+  assert.equal(record.source.originalPath, fs.realpathSync(outsideFile));
+  assert.equal(record.source.stagedPath, path.join(activeDir, 'source', path.basename(outsideFile)));
+  assert.equal(record.artifacts.stagedSource, path.join(activeDir, 'source', path.basename(outsideFile)));
+  assert.ok(fs.existsSync(record.artifacts.stagedSource));
+  assert.ok(fs.existsSync(record.artifacts.primary));
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(activeDir, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.source.originalPath, fs.realpathSync(outsideFile));
+  assert.equal(manifest.source.externalToRepo, true);
+  assert.equal(manifest.source.stagedRelativePath, path.join('source', path.basename(outsideFile)));
+
+  const html = fs.readFileSync(record.artifacts.primary, 'utf8');
+  assert.match(html, /outside root/i);
+});
+
+serialTest('render records staged-source metadata for inside-repo sources', async () => {
+  const result = await runCli(['render', insideFile]);
+  const record = expectSuccess(result);
+  assert.equal(record.source.externalToRepo, false);
+  assert.equal(record.source.originalPath, insideFile);
+  assert.ok(record.artifacts.stagedSource);
+  assert.ok(fs.existsSync(record.artifacts.stagedSource));
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(path.dirname(record.artifacts.primary), 'manifest.json'), 'utf8'));
+  assert.equal(manifest.source.originalPath, insideFile);
+  assert.equal(manifest.source.externalToRepo, false);
+});
+
+serialTest('update can replace the active surface from a new external source path while keeping staged-only reads', async () => {
+  const shown = await runCli(['show', insideFile]);
+  const shownRecord = expectSuccess(shown);
+
+  const updated = await runCli(['update', outsideFile]);
+  const updatedRecord = expectSuccess(updated);
+
+  assert.equal(updatedRecord.surfaceId, shownRecord.surfaceId);
+  assert.equal(updatedRecord.source.originalPath, fs.realpathSync(outsideFile));
+  assert.equal(updatedRecord.source.externalToRepo, true);
+  assert.equal(updatedRecord.artifacts.stagedSource, path.join(activeDir, 'source', path.basename(outsideFile)));
+  assert.ok(fs.existsSync(updatedRecord.artifacts.stagedSource));
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(activeDir, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.source.originalPath, fs.realpathSync(outsideFile));
+  assert.equal(manifest.source.externalToRepo, true);
+
+  const html = fs.readFileSync(path.join(activeDir, 'index.html'), 'utf8');
+  assert.match(html, /outside root/i);
+});
+
+serialTest('unsupported path schemes are rejected clearly', async () => {
+  const result = await runCli(['show', 'https://example.com/file.md']);
   const error = expectFailure(result, 'INVALID_INPUT');
-  assert.match(error.message, /Path escapes allowed roots/);
+  assert.match(error.message, /Unsupported source path scheme/);
 });
 
 serialTest('unsupported file types fail honestly with UNSUPPORTED_CONTENT', async () => {
@@ -787,12 +853,12 @@ serialTest('human verify failure output stays readable for operators', async () 
 });
 
 serialTest('human input failures humanize user action required classification', async () => {
-  const failure = await runCliText(['show', outsideFile]);
+  const failure = await runCliText(['show', 'https://example.com/file.md']);
 
   assert.equal(failure.stdout, '');
   assert.match(failure.stderr, /ERR Show/);
   assert.match(failure.stderr, /Code: INVALID_INPUT/);
-  assert.match(failure.stderr, /Reason: Path escapes allowed roots/);
+  assert.match(failure.stderr, /Reason: Unsupported source path scheme/);
   assert.match(failure.stderr, /Classification: user action required/);
   assert.match(failure.stderr, /Next: fix input/);
   assert.doesNotMatch(failure.stderr, /Classification: user_action_required/);

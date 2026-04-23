@@ -1,3 +1,12 @@
+export interface SurfaceSourceInfo {
+  originalPath: string;
+  sourceFileName: string;
+  stagedPath: string;
+  stagedRelativePath: string;
+  ingestedAt: string;
+  externalToRepo: boolean;
+}
+
 export interface SurfaceManifest {
   surfaceId: string;
   title: string;
@@ -7,6 +16,7 @@ export interface SurfaceManifest {
   updatedAt: string;
   sourceKind: 'html' | 'pdf' | 'artifact' | 'generated' | 'image' | 'table';
   renderMode: string;
+  source: SurfaceSourceInfo;
 }
 
 export type ViewerMode = 'closed' | 'degraded' | 'native';
@@ -46,6 +56,7 @@ export function createManifest(input: {
   entryPath: string;
   sourceKind: SurfaceManifest['sourceKind'];
   renderMode: string;
+  source: SurfaceSourceInfo;
 }): SurfaceManifest {
   const now = new Date().toISOString();
   return {
@@ -56,6 +67,7 @@ export function createManifest(input: {
     createdAt: now,
     updatedAt: now,
     sourceKind: input.sourceKind,
-    renderMode: input.renderMode
+    renderMode: input.renderMode,
+    source: input.source
   };
 }

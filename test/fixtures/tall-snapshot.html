@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Tall Snapshot Fixture</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+        color: #f8fafc;
+      }
+      .hero {
+        padding: 32px;
+        background: rgba(15, 23, 42, 0.88);
+        position: sticky;
+        top: 0;
+      }
+      .section {
+        height: 1200px;
+        padding: 32px;
+        border-top: 1px solid rgba(255,255,255,0.12);
+      }
+      .section:nth-child(odd) {
+        background: rgba(255,255,255,0.03);
+      }
+      .marker {
+        display: inline-block;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #22c55e;
+        color: #052e16;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="hero">
+      <h1>Tall Snapshot Fixture</h1>
+      <p>Used to verify full-content web snapshots rather than viewport crops.</p>
+    </div>
+    <div class="section"><span class="marker">Section 1</span></div>
+    <div class="section"><span class="marker">Section 2</span></div>
+    <div class="section"><span class="marker">Section 3</span></div>
+  </body>
+</html>

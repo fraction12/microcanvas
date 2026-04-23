@@ -63,7 +63,13 @@ export async function runShow(sourceOrSurfaceId?: string): Promise<CommandResult
           held: readLock().held
         },
         artifacts: {
-          primary: activeEntry
+          primary: activeEntry,
+          stagedSource: path.join(paths.activeDir, candidate.manifest.source.stagedRelativePath)
+        },
+        source: {
+          originalPath: candidate.manifest.source.originalPath,
+          stagedPath: path.join(paths.activeDir, candidate.manifest.source.stagedRelativePath),
+          externalToRepo: candidate.manifest.source.externalToRepo
         }
       },
       warnings: viewer.mode === 'degraded'

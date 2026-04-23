@@ -36,7 +36,7 @@ This repo is intentionally focused. It is not trying to be a full document suite
 
 ## Take It For A Spin
 
-Microcanvas is repo-first for now. Clone it, build it locally, and run the CLI from source:
+Microcanvas accepts supported local source files from anywhere on disk, then ingests them into Microcanvas-owned runtime paths before presentation. Clone it, build it locally, and run the CLI from source:
 
 ```bash
 npm install
@@ -66,6 +66,7 @@ node dist/cli/index.js snapshot --json
 
 ```bash
 microcanvas show path/to/file.md
+microcanvas show /tmp/exported-note.md
 microcanvas show path/to/file.png
 microcanvas show path/to/file.csv --json
 ```
@@ -213,6 +214,13 @@ Microcanvas keeps a canonical runtime root with:
 - `runtime/viewer-state.json`
 - request/response files used for viewer snapshot handoff
 
+Each surface is ingested through a source-versus-presentation boundary:
+
+- the caller can point at a supported local file from inside or outside the repo
+- Microcanvas copies that source into a surface-owned `source/` directory under staging/active
+- the viewer presents only the staged artifact under `runtime/staging` or `runtime/active`
+- the original source path is recorded in manifest/result metadata for operator and tool inspection, but the viewer does not read from it directly
+
 That gives tools a stable place to inspect:
 
 - which surface is active
@@ -227,7 +235,9 @@ Microcanvas is file-first, not a general-purpose hostile-content sandbox.
 
 Current defaults are intentionally narrow and honest:
 
-- source files must resolve inside the repo root and may not use symlinked source paths or symlinked ancestor directories
+- source files may come from anywhere on the local filesystem, but must be direct readable local file paths and may not use unsupported schemes
+- symlinked source paths and symlinked ancestor directories are rejected by default during ingest
+- Microcanvas ingests caller-provided sources into runtime-owned `source/` paths before rendering or presentation
 - Markdown, raw HTML, and wrapped code/text surfaces are sanitized before staging
 - the macOS native viewer disables JavaScript for the default local web-surface path
 - local web content can read only from the current staged active-surface directory, so any sibling assets must be intentionally materialized there

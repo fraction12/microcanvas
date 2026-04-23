@@ -18,9 +18,25 @@ npm install
 npm link
 npm run check
 npm test
+npm run pack:dry-run
 ```
 
 If you do not want the repo linked globally while you work, `npm run build` is still fine for local-only development.
+
+## OpenSpec Workflow
+
+Microcanvas uses OpenSpec for behavior, architecture, security, and repository-hygiene changes. Before implementing a non-trivial change, create or update an OpenSpec change with the proposal, design notes when useful, spec deltas, and tasks. Keep implementation PRs tied to the relevant OpenSpec task list so reviewers can see the intended behavior and validation scope.
+
+Small typo fixes and narrow documentation corrections may not need a new change, but they should still avoid contradicting active OpenSpec work.
+
+## Validation
+
+Run the checks that match the files you touched:
+
+- `npm run check` for TypeScript validation
+- `npm test` for the JS test suite
+- `cd apps/macos-viewer/MicrocanvasViewer && swift test` when the macOS viewer or Swift package changes are involved and the environment supports it
+- `npm run pack:dry-run` before packaging or repository-hygiene changes that affect published contents
 
 ## What Makes A Good Change
 

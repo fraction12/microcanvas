@@ -3,20 +3,20 @@ import WebKit
 import PDFKit
 
 enum PresentedSurface {
-    case webContent(URL)
+    case webView(WKWebView)
     case imageFile(URL)
     case pdfView(NSView)
 }
 
 @MainActor
 struct PresentedSurfaceSnapshotter {
-    private let captureWebContent: @MainActor (URL) async throws -> NSImage
+    private let captureWebView: @MainActor (WKWebView) async throws -> NSImage
     private let capturePresentedView: @MainActor (NSView) async throws -> NSImage
     private let captureImageFile: @MainActor (URL) async throws -> NSImage
 
     init(
-        captureWebContent: @MainActor @escaping (URL) async throws -> NSImage = { url in
-            try await FullPageWebSnapshotRenderer().capture(url: url)
+        captureWebView: @MainActor @escaping (WKWebView) async throws -> NSImage = { webView in
+            try await webView.captureFullPageSnapshot()
         },
         capturePresentedView: @MainActor @escaping (NSView) async throws -> NSImage = { view in
             try await view.presentedViewSnapshot()
@@ -32,15 +32,15 @@ struct PresentedSurfaceSnapshotter {
             return image
         }
     ) {
-        self.captureWebContent = captureWebContent
+        self.captureWebView = captureWebView
         self.capturePresentedView = capturePresentedView
         self.captureImageFile = captureImageFile
     }
 
     func capture(surface: PresentedSurface, to destination: URL) async throws {
         switch surface {
-        case .webContent(let url):
-            let image = try await captureWebContent(url)
+        case .webView(let webView):
+            let image = try await captureWebView(webView)
             try writePNG(image, to: destination)
         case .imageFile(let url):
             let image = try await captureImageFile(url)
@@ -72,25 +72,18 @@ struct WebSnapshotMetrics: Sendable {
     static let zero = WebSnapshotMetrics(width: 0, height: 0)
 }
 
-@MainActor
-private final class FullPageWebSnapshotRenderer: NSObject, WKNavigationDelegate {
-    private let webView: WKWebView
-    private var continuation: CheckedContinuation<Void, Error>?
+private struct WebSurfaceRenderState: Sendable {
+    let hasReadinessContract: Bool
+    let ready: Bool
+    let state: String?
+    let svgReady: Bool
+}
 
-    override init() {
-        let configuration = WKWebViewConfiguration()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        self.webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800), configuration: configuration)
-        super.init()
-        self.webView.navigationDelegate = self
-        self.webView.setValue(false, forKey: "drawsBackground")
-    }
-
-    func capture(url: URL) async throws -> NSImage {
-        let readAccessURL = url.deletingLastPathComponent()
-        try await load(url: url, allowingReadAccessTo: readAccessURL)
-        let metrics = (try? await webView.evaluateSnapshotMetrics()) ?? .zero
+private extension WKWebView {
+    @MainActor
+    func captureFullPageSnapshot() async throws -> NSImage {
+        try await waitForMicrocanvasSurfaceReadyIfNeeded()
+        let metrics = (try? await evaluateSnapshotMetrics()) ?? .zero
         let width = max(metrics.width, 1280)
         let height = max(metrics.height, 800)
         guard width > 0, height > 0 else {
@@ -102,34 +95,263 @@ private final class FullPageWebSnapshotRenderer: NSObject, WKNavigationDelegate 
         }
 
         let rect = CGRect(origin: .zero, size: CGSize(width: width, height: height)).integral
-        let pdfData = try await webView.capturePDF(rect: rect)
+        let hasRenderedSvg = (try? await evaluateHasRenderedSVG()) ?? false
+        if hasRenderedSvg, let rasterizedSvgImage = try await captureRenderedSVGImage() {
+            return rasterizedSvgImage
+        }
+        if hasRenderedSvg {
+            return try await captureImageSnapshot(rect: rect)
+        }
+
+        let pdfData = try await capturePDF(rect: rect)
         return try renderPDFSnapshot(pdfData, targetSize: rect.size)
     }
 
-    private func load(url: URL, allowingReadAccessTo readAccessURL: URL) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            self.continuation = continuation
-            webView.loadFileURL(url, allowingReadAccessTo: readAccessURL)
+    @MainActor
+    func waitForMicrocanvasSurfaceReadyIfNeeded(timeoutNanoseconds: UInt64 = 3_000_000_000) async throws {
+        let stepNanoseconds: UInt64 = 100_000_000
+        var elapsed: UInt64 = 0
+
+        while elapsed < timeoutNanoseconds {
+            let state = try await evaluateMicrocanvasRenderState()
+            if !state.hasReadinessContract || isMicrocanvasSurfaceReadyForCapture(state) {
+                return
+            }
+            try await Task.sleep(nanoseconds: stepNanoseconds)
+            elapsed += stepNanoseconds
+        }
+
+        throw NSError(
+            domain: "MicrocanvasViewer",
+            code: 18,
+            userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for surface render readiness before snapshot"]
+        )
+    }
+
+    private func isMicrocanvasSurfaceReadyForCapture(_ state: WebSurfaceRenderState) -> Bool {
+        guard state.ready else {
+            return false
+        }
+
+        if state.state == "error" {
+            return true
+        }
+
+        return state.svgReady
+    }
+
+    @MainActor
+    func evaluateHasRenderedSVG() async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            evaluateJavaScript(
+                """
+                (() => Boolean(document?.querySelector?.('.diagram-render-output svg')))();
+                """
+            ) { value, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                continuation.resume(returning: value as? Bool ?? false)
+            }
         }
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        continuation?.resume()
-        continuation = nil
+    @MainActor
+    func captureRenderedSVGImage(timeoutNanoseconds: UInt64 = 3_000_000_000) async throws -> NSImage? {
+        let stepNanoseconds: UInt64 = 100_000_000
+        var elapsed: UInt64 = 0
+
+        while elapsed < timeoutNanoseconds {
+            let result = try await evaluateRenderedSVGDataURLState()
+            switch result.state {
+            case "done":
+                guard let dataURL = result.dataURL else {
+                    return nil
+                }
+                return try decodePNGDataURL(dataURL)
+            case "error":
+                return nil
+            default:
+                try await Task.sleep(nanoseconds: stepNanoseconds)
+                elapsed += stepNanoseconds
+            }
+        }
+
+        return nil
     }
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        continuation?.resume(throwing: error)
-        continuation = nil
+    @MainActor
+    func evaluateRenderedSVGDataURLState() async throws -> (state: String, dataURL: String?) {
+        try await withCheckedThrowingContinuation { continuation in
+            evaluateJavaScript(
+                """
+                (() => {
+                  if (window.__microcanvasSvgRasterState === 'done' || window.__microcanvasSvgRasterState === 'error') {
+                    return {
+                      state: window.__microcanvasSvgRasterState,
+                      dataURL: window.__microcanvasSvgRasterDataURL ?? null
+                    };
+                  }
+
+                  if (window.__microcanvasSvgRasterState !== 'pending') {
+                    window.__microcanvasSvgRasterState = 'pending';
+                    window.__microcanvasSvgRasterDataURL = null;
+
+                    (async () => {
+                      try {
+                        const svg = document.querySelector('.diagram-render-output svg');
+                        if (!svg) {
+                          throw new Error('No rendered SVG available');
+                        }
+
+                        const rect = svg.getBoundingClientRect();
+                        const bbox = typeof svg.getBBox === 'function' ? svg.getBBox() : null;
+                        const width = Math.max(Math.ceil(rect.width || 0), Math.ceil(bbox?.width || 0), 1);
+                        const height = Math.max(Math.ceil(rect.height || 0), Math.ceil(bbox?.height || 0), 1);
+                        const clone = svg.cloneNode(true);
+                        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+                        clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+                        clone.setAttribute('width', String(width));
+                        clone.setAttribute('height', String(height));
+                        if (!clone.getAttribute('viewBox')) {
+                          clone.setAttribute('viewBox', `0 0 ${width} ${height}`);
+                        }
+                        const serialized = new XMLSerializer().serializeToString(clone);
+                        const blob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
+                        const url = URL.createObjectURL(blob);
+                        try {
+                          const image = await new Promise((resolve, reject) => {
+                            const img = new Image();
+                            img.onload = () => resolve(img);
+                            img.onerror = () => reject(new Error('Unable to load serialized SVG'));
+                            img.src = url;
+                          });
+                          const canvas = document.createElement('canvas');
+                          canvas.width = width;
+                          canvas.height = height;
+                          const context = canvas.getContext('2d');
+                          if (!context) {
+                            throw new Error('Unable to create canvas context');
+                          }
+                          context.drawImage(image, 0, 0, width, height);
+                          window.__microcanvasSvgRasterDataURL = canvas.toDataURL('image/png');
+                          window.__microcanvasSvgRasterState = 'done';
+                        } finally {
+                          URL.revokeObjectURL(url);
+                        }
+                      } catch (_error) {
+                        window.__microcanvasSvgRasterState = 'error';
+                        window.__microcanvasSvgRasterDataURL = null;
+                      }
+                    })();
+                  }
+
+                  return {
+                    state: window.__microcanvasSvgRasterState || 'pending',
+                    dataURL: window.__microcanvasSvgRasterDataURL ?? null
+                  };
+                })();
+                """
+            ) { value, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let dictionary = value as? [String: Any] else {
+                    continuation.resume(returning: ("pending", nil))
+                    return
+                }
+
+                let state = dictionary["state"] as? String ?? "pending"
+                let dataURL = dictionary["dataURL"] as? String
+                continuation.resume(returning: (state, dataURL))
+            }
+        }
     }
 
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        continuation?.resume(throwing: error)
-        continuation = nil
-    }
-}
+    @MainActor
+    func decodePNGDataURL(_ dataURL: String) throws -> NSImage {
+        let prefix = "data:image/png;base64,"
+        guard dataURL.hasPrefix(prefix) else {
+            throw NSError(
+                domain: "MicrocanvasViewer",
+                code: 20,
+                userInfo: [NSLocalizedDescriptionKey: "Rendered SVG did not produce a PNG data URL"]
+            )
+        }
 
-private extension WKWebView {
+        let base64 = String(dataURL.dropFirst(prefix.count))
+        guard let data = Data(base64Encoded: base64), let image = NSImage(data: data) else {
+            throw NSError(
+                domain: "MicrocanvasViewer",
+                code: 21,
+                userInfo: [NSLocalizedDescriptionKey: "Unable to decode rendered SVG PNG data URL"]
+            )
+        }
+
+        return image
+    }
+
+    @MainActor
+    func evaluateMicrocanvasRenderState() async throws -> WebSurfaceRenderState {
+        try await withCheckedThrowingContinuation { continuation in
+            evaluateJavaScript(
+                """
+                (() => {
+                  const dataset = document?.documentElement?.dataset;
+                  const state = dataset?.microcanvasRenderState ?? null;
+                  const hasReadinessContract = Object.prototype.hasOwnProperty.call(window, '__microcanvasSurfaceReady') ||
+                    Object.prototype.hasOwnProperty.call(dataset ?? {}, 'microcanvasRenderState');
+                  const svg = document?.querySelector?.('.diagram-render-output svg');
+                  const bbox = svg && typeof svg.getBBox === 'function' ? svg.getBBox() : null;
+                  const rect = svg && typeof svg.getBoundingClientRect === 'function' ? svg.getBoundingClientRect() : null;
+                  const svgReady = Boolean(
+                    svg && (
+                      (bbox && bbox.width > 0 && bbox.height > 0) ||
+                      (rect && rect.width > 0 && rect.height > 0)
+                    )
+                  );
+                  return {
+                    hasReadinessContract,
+                    ready: Boolean(window.__microcanvasSurfaceReady),
+                    state,
+                    svgReady
+                  };
+                })();
+                """
+            ) { value, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let dictionary = value as? [String: Any] else {
+                    continuation.resume(returning: WebSurfaceRenderState(
+                        hasReadinessContract: false,
+                        ready: false,
+                        state: nil,
+                        svgReady: false
+                    ))
+                    return
+                }
+
+                let hasReadinessContract = dictionary["hasReadinessContract"] as? Bool ?? false
+                let ready = dictionary["ready"] as? Bool ?? false
+                let state = dictionary["state"] as? String
+                let svgReady = dictionary["svgReady"] as? Bool ?? false
+                continuation.resume(returning: WebSurfaceRenderState(
+                    hasReadinessContract: hasReadinessContract,
+                    ready: ready,
+                    state: state,
+                    svgReady: svgReady
+                ))
+            }
+        }
+    }
+
     @MainActor
     func capturePDF(rect: CGRect) async throws -> Data {
         let configuration = WKPDFConfiguration()
@@ -143,6 +365,32 @@ private extension WKWebView {
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
+            }
+        }
+    }
+
+    @MainActor
+    func captureImageSnapshot(rect: CGRect) async throws -> NSImage {
+        let configuration = WKSnapshotConfiguration()
+        configuration.rect = rect
+        configuration.afterScreenUpdates = true
+        configuration.snapshotWidth = NSNumber(value: Double(rect.width))
+
+        return try await withCheckedThrowingContinuation { continuation in
+            takeSnapshot(with: configuration) { image, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let image else {
+                    continuation.resume(throwing: NSError(
+                        domain: "MicrocanvasViewer",
+                        code: 19,
+                        userInfo: [NSLocalizedDescriptionKey: "WKWebView returned no image for snapshot"]
+                    ))
+                    return
+                }
+                continuation.resume(returning: image)
             }
         }
     }

@@ -558,16 +558,14 @@ final class ViewerModel: ObservableObject {
         case "wkwebview":
             guard let presentedWebView,
                   presentedWebSurfaceId == manifest.surfaceId,
-                  presentedWebRevision == manifest.updatedAt,
-                  let activeURL else {
+                  presentedWebRevision == manifest.updatedAt else {
                 throw NSError(
                     domain: "MicrocanvasViewer",
                     code: 3,
                     userInfo: [NSLocalizedDescriptionKey: "viewer has no presented web surface to capture"]
                 )
             }
-            _ = presentedWebView
-            surface = .webContent(activeURL)
+            surface = .webView(presentedWebView)
         case "image":
             guard presentedSurfaceView != nil,
                   presentedSurfaceViewId == manifest.surfaceId,

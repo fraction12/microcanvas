@@ -25,6 +25,7 @@ const insideFile = path.join(fixtureDir, 'inside.md');
 const updateFile = path.join(fixtureDir, 'updated.md');
 const unsupportedFile = path.join(fixtureDir, 'unsupported.zip');
 const csvFile = path.join(fixtureDir, 'sample-table.csv');
+const mermaidFile = path.join(fixtureDir, 'sample-diagram.mmd');
 const hostileMarkdownFile = path.join(fixtureDir, 'hostile.md');
 const hostileHtmlFile = path.join(fixtureDir, 'hostile.html');
 const symlinkSourceFile = path.join(fixtureDir, 'inside-link.md');
@@ -65,7 +66,11 @@ async function runCliText(args) {
 }
 
 function resetRuntime() {
-  fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  try {
+    fs.rmSync(runtimeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  } catch {
+    fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  }
   fs.mkdirSync(activeDir, { recursive: true });
   fs.mkdirSync(snapshotsDir, { recursive: true });
 }
@@ -174,6 +179,7 @@ test.before(() => {
   fs.writeFileSync(hostileMarkdownFile, '# hostile\n\n<script>alert(1)</script>\n\n[click](javascript:alert(2))\n\n<img src="file:///etc/passwd" onerror="alert(3)">\n');
   fs.writeFileSync(hostileHtmlFile, '<!doctype html><html><body><h1>safe</h1><script>alert(1)</script><a href="javascript:alert(2)" onclick="alert(3)">x</a><img src="file:///etc/passwd" onerror="alert(4)"></body></html>');
   fs.writeFileSync(unsupportedFile, 'not really a zip, but good enough for extension coverage\n');
+  fs.writeFileSync(mermaidFile, 'flowchart TD\n  A[Agent] --> B[Microcanvas]\n  B --> C[Viewer]\n');
   fs.writeFileSync(outsideFile, 'outside root\n');
   try { fs.rmSync(symlinkSourceFile, { force: true }); } catch {}
   try { fs.rmSync(symlinkDir, { recursive: true, force: true }); } catch {}
@@ -264,6 +270,33 @@ serialTest('show renders and activates csv as a deterministic html table surface
   assert.match(html, /<thead><tr><th scope="col">name<\/th><th scope="col">role<\/th><th scope="col">notes<\/th><\/tr><\/thead>/);
   assert.match(html, /<tbody><tr><td>Atlas<\/td><td>owner<\/td><td>Keeps scope tight<\/td><\/tr>/);
   assert.match(html, /Uses &quot;escaped quotes&quot; cleanly/);
+});
+
+serialTest('show renders mermaid source files into diagram html automatically', async () => {
+  const result = await runCli(['show', mermaidFile]);
+  const record = expectSuccess(result);
+
+  assertDisplayRecord(record, {
+    surfaceId: record.surfaceId,
+    primaryArtifact: path.join(activeDir, 'index.html')
+  });
+  assertDisplayVerification(result, record.viewer.mode);
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(activeDir, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.entryPath, 'index.html');
+  assert.equal(manifest.renderMode, 'wkwebview');
+  assert.equal(manifest.sourceKind, 'generated');
+  assert.equal(manifest.contentType, 'text/html');
+
+  const html = fs.readFileSync(path.join(activeDir, 'index.html'), 'utf8');
+  assert.match(html, /Mermaid diagram/i);
+  assert.match(html, /<div class="diagram-render-output"/i);
+  assert.match(html, /assets\/mermaid\.min\.js/i);
+  assert.match(html, /Agent/);
+  assert.match(html, /Microcanvas/);
+  assert.match(html, /Viewer/);
+  assert.ok(fs.existsSync(path.join(activeDir, 'assets', 'mermaid.min.js')));
+  assert.match(html, /window\.mermaid \|\| window\.__esbuild_esm_mermaid_nm\?\.mermaid/);
 });
 
 serialTest('show renders and activates supported image files across formats', async () => {
@@ -610,7 +643,7 @@ serialTest('snapshot fails clearly when only degraded viewer mode is available',
   writeActiveManifest('surface-degraded');
   fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>degraded</body></html>');
 
-  const snapshot = await runCli(['snapshot']);
+  const snapshot = await runSnapshot();
   const error = expectFailure(snapshot, 'VERIFY_FAILED');
   assert.match(error.message, /native viewer|degraded/i);
 });

@@ -6,14 +6,16 @@ Thanks for helping keep Microcanvas safe.
 
 Please do not open a public GitHub issue for security vulnerabilities.
 
-Instead, report the issue privately to the project maintainer with:
+The project does not yet publish a dedicated security inbox. Until one is announced, use the maintainer's existing private contact path if you already have it. If you do not, open a minimal public issue titled "Request private security contact" and include no exploit details, repro steps, affected paths, or sensitive logs. A maintainer should then provide a private channel before any vulnerability details are shared.
+
+This placeholder contact process must be replaced with a real private reporting route before any wider public announcement.
+
+When you have a private channel, include:
 
 - a description of the issue
 - steps to reproduce it
 - the impact you believe it has
 - any suggested fix or mitigation, if you have one
-
-If you already know the preferred private contact route for this project, use that channel. If not, open a minimal public issue asking for a private security contact path without including exploit details.
 
 ## What To Expect
 

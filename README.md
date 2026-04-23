@@ -69,6 +69,7 @@ microcanvas show path/to/file.md
 microcanvas show /tmp/exported-note.md
 microcanvas show path/to/file.png
 microcanvas show path/to/file.csv --json
+microcanvas show path/to/diagram.mmd
 ```
 
 Use `show` when you want Microcanvas to render if needed, activate the result, and open it.
@@ -114,6 +115,7 @@ Supported now:
 
 - `.html`, `.htm` rendered as real local browser-style surfaces with JS/CSS/layout preserved
 - `.md`, `.markdown` rendered to sanitized HTML
+- `.mmd`, `.mermaid` rendered into Mermaid diagram surfaces automatically
 - `.pdf`
 - `.csv` rendered into a deterministic HTML table surface
 - `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
@@ -140,7 +142,7 @@ This matters in practice:
 
 - `show` and `update` only report `native` after the viewer heartbeat confirms readiness, and the native app brings its window to the front when new content is presented when macOS allows it
 - raw `.html` and `.htm` surfaces are presented as real local browser-style content by default, with JavaScript enabled and local asset access scoped to the ingested surface copy
-- Markdown/code/table surfaces still render through Microcanvas-owned HTML presentation output
+- Markdown/code/table/Mermaid surfaces still render through Microcanvas-owned HTML presentation output
 - if an older native viewer session is still hanging around, Microcanvas clears that stale session before trusting a new launch attempt
 - `show` and `update` can still succeed in degraded mode
 - `status` tells you what kind of runtime/viewer state you currently have
@@ -279,13 +281,16 @@ For concrete agent flows, see `skills/microcanvas-present/references/cookbook.md
 npm install
 npm run check
 npm test
+npm run pack:dry-run
 ```
 
 The current implementation is small on purpose. Surface detection and materialization run through the adapter registry in [`src/core/surface.ts`](src/core/surface.ts), which keeps format support explicit and easier to extend without turning the content model into soup.
 
+When macOS viewer changes are involved and your environment supports it, run `cd apps/macos-viewer/MicrocanvasViewer && swift test`.
+
 ## Contributing
 
-Contributions are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow and expectations.
+Contributions are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) for the OpenSpec workflow, validation commands, and PR expectations.
 
 ## Security
 

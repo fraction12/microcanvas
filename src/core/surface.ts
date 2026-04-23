@@ -19,7 +19,7 @@ export interface RenderedSurface {
   primaryArtifact: string;
 }
 
-type SurfaceTransform = 'markdown-to-html' | 'csv-to-html-table';
+type SurfaceTransform = 'markdown-to-html' | 'csv-to-html-table' | 'mermaid-to-html';
 
 type Detection = {
   contentType: string;
@@ -54,6 +54,14 @@ const surfaceAdapters: SurfaceAdapter[] = [
     renderMode: 'wkwebview',
     targetName: 'index.html',
     transform: 'markdown-to-html'
+  },
+  {
+    extensions: ['.mmd', '.mermaid'],
+    contentType: 'text/html',
+    sourceKind: 'generated',
+    renderMode: 'wkwebview',
+    targetName: 'index.html',
+    transform: 'mermaid-to-html'
   },
   {
     extensions: ['.pdf'],
@@ -373,36 +381,64 @@ function buildHtmlDocument(title: string, body: string): string {
       :root {
         color-scheme: light;
         color: #17212b;
+        --surface-ink: #17212b;
+        --surface-muted: #52606d;
+        --surface-line: rgba(31, 41, 55, 0.14);
+        --surface-soft-line: rgba(31, 41, 55, 0.08);
+        --surface-paper: rgba(255, 252, 246, 0.88);
+        --surface-paper-strong: rgba(255, 255, 255, 0.94);
+        --surface-tint: rgba(234, 179, 8, 0.12);
+        --surface-shadow: 0 24px 60px rgba(15, 23, 42, 0.10);
       }
       html {
         background:
-          radial-gradient(circle at top left, rgba(108, 122, 137, 0.12), transparent 30%),
-          radial-gradient(circle at top right, rgba(108, 122, 137, 0.08), transparent 24%),
-          linear-gradient(180deg, rgba(127, 127, 127, 0.04), transparent 35%);
+          radial-gradient(circle at top left, rgba(15, 23, 42, 0.08), transparent 28%),
+          radial-gradient(circle at top right, rgba(217, 119, 6, 0.10), transparent 26%),
+          linear-gradient(180deg, #f6f1e7 0%, #f8f6f0 42%, #eef3f7 100%);
       }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         margin: 0;
-        line-height: 1.6;
         min-height: 100vh;
-        color: #17212b;
+        color: var(--surface-ink);
+        line-height: 1.6;
+        font-family: "SF Pro Text", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        letter-spacing: -0.02em;
+      }
+      p, li {
+        color: var(--surface-ink);
       }
       pre, code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
       }
       .surface-shell {
+        position: relative;
         max-width: 980px;
-        margin: 32px auto;
-        padding: 0 20px 56px;
+        margin: 40px auto;
+        padding: 0 24px 64px;
       }
       .surface-card {
-        background: rgba(255, 255, 255, 0.78);
-        border: 1px solid rgba(127, 127, 127, 0.22);
-        border-radius: 20px;
-        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
-        padding: 28px 32px 32px;
-        backdrop-filter: blur(8px);
-        color: #17212b;
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(180deg, var(--surface-paper-strong) 0%, var(--surface-paper) 100%);
+        border: 1px solid var(--surface-line);
+        border-radius: 26px;
+        box-shadow: var(--surface-shadow);
+        padding: 30px 34px 34px;
+        color: var(--surface-ink);
+        backdrop-filter: blur(10px);
+      }
+      .surface-card::before {
+        content: '';
+        position: absolute;
+        inset: 0 0 auto;
+        height: 4px;
+        background: linear-gradient(90deg, #d97706 0%, #f59e0b 38%, #0f3b53 100%);
+        opacity: 0.9;
       }
       .surface-card > :first-child {
         margin-top: 0;
@@ -417,10 +453,14 @@ function buildHtmlDocument(title: string, body: string): string {
         padding: 24px;
       }
       pre {
-        padding: 16px;
-        border-radius: 10px;
+        padding: 16px 18px;
+        border-radius: 14px;
         overflow-x: auto;
-        background: rgba(127, 127, 127, 0.12);
+        background: rgba(15, 23, 42, 0.055);
+        border: 1px solid var(--surface-soft-line);
+      }
+      a {
+        color: #0f4c81;
       }
       table {
         width: 100%;
@@ -438,7 +478,7 @@ function buildHtmlDocument(title: string, body: string): string {
         color: #17212b;
       }
       th {
-        background: rgba(127, 127, 127, 0.1);
+        background: rgba(15, 23, 42, 0.06);
         font-weight: 600;
       }
       thead th:first-child {
@@ -461,9 +501,10 @@ function buildHtmlDocument(title: string, body: string): string {
       .table-scroll {
         overflow-x: auto;
         margin: 18px 0 0;
-        border: 1px solid rgba(127, 127, 127, 0.22);
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.62);
+        border: 1px solid var(--surface-line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
       }
       .table-scroll > table {
         min-width: 100%;
@@ -475,7 +516,7 @@ function buildHtmlDocument(title: string, body: string): string {
       }
       .table-empty {
         font-style: italic;
-        opacity: 0.8;
+        color: var(--surface-muted);
         margin: 0 0 12px;
       }
       img {
@@ -488,6 +529,249 @@ function buildHtmlDocument(title: string, body: string): string {
     ${body}
   </body>
 </html>`;
+}
+
+
+function mermaidRuntimeAssetPath(): string {
+  return path.join(paths.repoRoot, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js');
+}
+
+function ensureMermaidRuntimeAsset(destinationDir: string): void {
+  const runtimeAssetPath = mermaidRuntimeAssetPath();
+  if (!fs.existsSync(runtimeAssetPath)) {
+    throw new Error('Mermaid runtime asset is unavailable. Run npm install to restore dependencies.');
+  }
+
+  fs.mkdirSync(destinationDir, { recursive: true });
+  fs.copyFileSync(runtimeAssetPath, path.join(destinationDir, 'mermaid.min.js'));
+}
+
+function buildMermaidDocument(title: string, source: string): string {
+  const escapedSource = escapeHtml(source);
+  return buildHtmlDocument(
+    title,
+    `<main class="surface-shell surface-shell--diagram">
+  <article class="surface-card surface-card--diagram">
+    <header class="diagram-header">
+      <div class="diagram-meta-row">
+        <p class="diagram-kicker">Mermaid diagram</p>
+        <p class="diagram-meta">Viewer-rendered locally · Inspectable output</p>
+      </div>
+      <h1>${escapeHtml(title)}</h1>
+      <p class="diagram-dek">A clean presentation layer for agent-generated structure — readable at a glance, with the source still one click away.</p>
+    </header>
+    <section class="diagram-frame">
+      <div class="diagram-frame__label">Rendered canvas</div>
+      <div class="diagram-render-output" aria-label="Rendered Mermaid diagram"></div>
+      <p class="diagram-error" hidden></p>
+    </section>
+    <details class="diagram-source">
+      <summary>
+        <span>Diagram source</span>
+        <span class="diagram-source-hint">Reveal the underlying Mermaid</span>
+      </summary>
+      <pre><code>${escapedSource}</code></pre>
+    </details>
+  </article>
+</main>`
+  ).replace(
+    '</body>',
+    `    <script src="./assets/mermaid.min.js"></script>
+    <script>
+      const MICROCANVAS_MERMAID_SOURCE = ${JSON.stringify(source)};
+      window.__microcanvasSurfaceReady = false;
+      document.documentElement.dataset.microcanvasRenderState = 'pending';
+
+      (async () => {
+        const output = document.querySelector('.diagram-render-output');
+        const error = document.querySelector('.diagram-error');
+        const mermaidApi = window.mermaid || window.__esbuild_esm_mermaid_nm?.mermaid;
+
+        if (!output || !error || !mermaidApi) {
+          if (error) {
+            error.hidden = false;
+            error.textContent = 'Mermaid runtime failed to load.';
+          }
+          document.documentElement.dataset.microcanvasRenderState = 'error';
+          window.__microcanvasSurfaceReady = true;
+          return;
+        }
+
+        mermaidApi.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'base',
+          themeVariables: {
+            fontFamily: '"SF Pro Text", "Segoe UI", sans-serif',
+            primaryColor: '#fff8eb',
+            primaryTextColor: '#17212b',
+            primaryBorderColor: '#d7c3a3',
+            lineColor: '#31556d',
+            secondaryColor: '#f5eee3',
+            tertiaryColor: '#eef3f7',
+            clusterBkg: '#fff9ef',
+            clusterBorder: '#d9c3a0',
+            edgeLabelBackground: '#fffaf0',
+            actorBkg: '#f3ead8',
+            actorBorder: '#c8ae80',
+            signalColor: '#31556d',
+            noteBkgColor: '#fff6dd',
+            noteBorderColor: '#d9be88'
+          },
+          flowchart: {
+            useMaxWidth: true,
+            htmlLabels: true,
+            curve: 'basis'
+          }
+        });
+
+        try {
+          const renderResult = await mermaidApi.render('microcanvas-mermaid-diagram', MICROCANVAS_MERMAID_SOURCE);
+          output.innerHTML = renderResult.svg;
+          if (typeof renderResult.bindFunctions === 'function') {
+            renderResult.bindFunctions(output);
+          }
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const renderedSvg = output.querySelector('svg');
+          if (!renderedSvg) {
+            throw new Error('Mermaid did not produce an SVG output.');
+          }
+          document.documentElement.dataset.microcanvasRenderState = 'ready';
+          window.__microcanvasSurfaceReady = true;
+        } catch (cause) {
+          output.setAttribute('hidden', 'hidden');
+          error.hidden = false;
+          error.textContent = cause && typeof cause === 'object' && 'message' in cause
+            ? String(cause.message)
+            : String(cause);
+          document.documentElement.dataset.microcanvasRenderState = 'error';
+          window.__microcanvasSurfaceReady = true;
+        }
+      })();
+    </script>
+  </body>`
+  ).replace(
+    '</style>',
+    `
+      .surface-shell--diagram {
+        max-width: 1280px;
+      }
+      .surface-card--diagram {
+        padding: 28px 28px 32px;
+      }
+      .diagram-header {
+        padding-bottom: 18px;
+        border-bottom: 1px solid var(--surface-soft-line);
+      }
+      .diagram-meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: baseline;
+        flex-wrap: wrap;
+      }
+      .diagram-header h1 {
+        margin: 10px 0 0;
+        font-size: clamp(1.5rem, 2vw, 2.15rem);
+        line-height: 1.08;
+      }
+      .diagram-kicker {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #9a6700;
+      }
+      .diagram-meta {
+        margin: 0;
+        font-size: 0.82rem;
+        color: var(--surface-muted);
+      }
+      .diagram-dek {
+        margin: 12px 0 0;
+        max-width: 62ch;
+        color: var(--surface-muted);
+        font-size: 0.98rem;
+      }
+      .diagram-frame {
+        overflow: auto;
+        margin-top: 22px;
+        padding: 22px;
+        border-radius: 22px;
+        background:
+          linear-gradient(180deg, rgba(255, 253, 248, 0.98), rgba(247, 243, 235, 0.96));
+        border: 1px solid rgba(143, 116, 74, 0.18);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.9),
+          0 10px 24px rgba(15, 23, 42, 0.05);
+      }
+      .diagram-frame__label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 16px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(15, 59, 83, 0.08);
+        border: 1px solid rgba(15, 59, 83, 0.1);
+        color: #0f3b53;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .diagram-render-output {
+        min-height: 140px;
+      }
+      .diagram-frame svg {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        margin: 0 auto;
+      }
+      .diagram-frame .label,
+      .diagram-frame .nodeLabel,
+      .diagram-frame .edgeLabel {
+        color: #17212b !important;
+      }
+      .diagram-error {
+        margin: 0;
+        color: #991b1b;
+        font-weight: 600;
+      }
+      .diagram-source {
+        margin-top: 18px;
+        border: 1px solid var(--surface-soft-line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.56);
+      }
+      .diagram-source summary {
+        cursor: pointer;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        list-style: none;
+        font-weight: 600;
+      }
+      .diagram-source summary::-webkit-details-marker {
+        display: none;
+      }
+      .diagram-source-hint {
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--surface-muted);
+      }
+      .diagram-source pre {
+        margin: 0;
+        border: 0;
+        border-top: 1px solid var(--surface-soft-line);
+        border-radius: 0 0 18px 18px;
+        background: rgba(15, 23, 42, 0.045);
+      }
+    </style>`
+  );
 }
 
 async function materializeArtifact(
@@ -510,6 +794,14 @@ async function materializeArtifact(
   if (detected.transform === 'csv-to-html-table') {
     const raw = fs.readFileSync(resolvedSource, 'utf8');
     const html = renderCsvTable(title, raw);
+    fs.writeFileSync(targetPath, html);
+    return;
+  }
+
+  if (detected.transform === 'mermaid-to-html') {
+    const raw = fs.readFileSync(resolvedSource, 'utf8');
+    ensureMermaidRuntimeAsset(path.join(path.dirname(targetPath), 'assets'));
+    const html = buildMermaidDocument(title, raw);
     fs.writeFileSync(targetPath, html);
     return;
   }

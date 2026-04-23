@@ -1,4 +1,6 @@
-# Microcanvas Implementation Plan
+# Microcanvas Bootstrap Implementation Plan
+
+This is historical bootstrap planning context from the first Microcanvas vertical slice. Current behavior and future changes are tracked through README, CONTRIBUTING, and OpenSpec.
 
 Last updated: 2026-04-21
 

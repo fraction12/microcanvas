@@ -36,9 +36,12 @@
     "microcanvas": "./dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && npm run build:tsc",
+    "build:tsc": "tsc -p tsconfig.json",
     "prepare": "npm run build",
     "check": "tsc -p tsconfig.json --noEmit",
+    "pack:dry-run": "npm run build && npm pack --dry-run",
     "test": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
     "install:skills": "bash skills/microcanvas-present/scripts/install-agent-skill.sh"
   },
@@ -46,7 +49,8 @@
     "agenttk": "^0.1.5",
     "marked": "^15.0.12",
     "picocolors": "^1.1.1",
-    "sanitize-html": "^2.13.0"
+    "sanitize-html": "^2.13.0",
+    "mermaid": "^11.12.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

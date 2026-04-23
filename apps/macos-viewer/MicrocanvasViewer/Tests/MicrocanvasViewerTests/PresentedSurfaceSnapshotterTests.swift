@@ -52,24 +52,23 @@ final class PresentedSurfaceSnapshotterTests: XCTestCase {
         XCTAssertNotNil(NSImage(contentsOf: destination))
     }
 
-    func testSnapshotWebSurfaceUsesWebContentHook() async throws {
+    func testSnapshotWebSurfaceUsesPresentedWebViewHook() async throws {
         let root = makeRoot()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-        let source = root.appendingPathComponent("index.html", isDirectory: false)
-        try Data("<html><body>fixture</body></html>".utf8).write(to: source)
         let destination = root.appendingPathComponent("snapshot.png", isDirectory: false)
-        var capturedURL: URL?
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
+        var capturedWebView: WKWebView?
         let snapshotter = PresentedSurfaceSnapshotter(
-            captureWebContent: { candidate in
-                capturedURL = candidate
+            captureWebView: { candidate in
+                capturedWebView = candidate
                 return self.makeSolidImage(color: .systemBlue, size: NSSize(width: 32, height: 32))
             }
         )
 
-        try await snapshotter.capture(surface: .webContent(source), to: destination)
+        try await snapshotter.capture(surface: .webView(webView), to: destination)
 
-        XCTAssertEqual(capturedURL, source)
+        XCTAssertTrue(capturedWebView === webView)
         XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
         XCTAssertNotNil(NSImage(contentsOf: destination))
     }

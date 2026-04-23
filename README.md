@@ -112,7 +112,7 @@ Microcanvas is deliberately honest about what it can display today.
 
 Supported now:
 
-- `.html`, `.htm` through a sanitized safe-by-default local presentation path
+- `.html`, `.htm` rendered as real local browser-style surfaces with JS/CSS/layout preserved
 - `.md`, `.markdown` rendered to sanitized HTML
 - `.pdf`
 - `.csv` rendered into a deterministic HTML table surface
@@ -139,7 +139,8 @@ Microcanvas separates "something opened" from "the native viewer is fully availa
 This matters in practice:
 
 - `show` and `update` only report `native` after the viewer heartbeat confirms readiness, and the native app brings its window to the front when new content is presented when macOS allows it
-- local HTML-like surfaces are treated as presentation content by default: Microcanvas sanitizes rendered Markdown and raw HTML, disables JavaScript in the default `WKWebView` path, and limits local file reads to the active staged surface directory
+- raw `.html` and `.htm` surfaces are presented as real local browser-style content by default, with JavaScript enabled and local asset access scoped to the ingested surface copy
+- Markdown/code/table surfaces still render through Microcanvas-owned HTML presentation output
 - if an older native viewer session is still hanging around, Microcanvas clears that stale session before trusting a new launch attempt
 - `show` and `update` can still succeed in degraded mode
 - `status` tells you what kind of runtime/viewer state you currently have
@@ -238,9 +239,9 @@ Current defaults are intentionally narrow and honest:
 - source files may come from anywhere on the local filesystem, but must be direct readable local file paths and may not use unsupported schemes
 - symlinked source paths and symlinked ancestor directories are rejected by default during ingest
 - Microcanvas ingests caller-provided sources into runtime-owned `source/` paths before rendering or presentation
-- Markdown, raw HTML, and wrapped code/text surfaces are sanitized before staging
-- the macOS native viewer disables JavaScript for the default local web-surface path
-- local web content can read only from the current staged active-surface directory, so any sibling assets must be intentionally materialized there
+- Markdown and wrapped code/text surfaces are sanitized before staging
+- raw HTML surfaces keep their original JS/CSS/layout behavior inside the ingested local surface copy
+- local web content can read only from the current ingested surface copy, so sibling assets must live alongside the source HTML to come through
 
 That reduces obvious local-surface risk, but it does not claim to safely execute arbitrary untrusted web apps.
 

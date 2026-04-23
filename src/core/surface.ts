@@ -45,7 +45,7 @@ const surfaceAdapters: SurfaceAdapter[] = [
     contentType: 'text/html',
     sourceKind: 'html',
     renderMode: 'wkwebview',
-    targetName: 'index.html'
+    targetName: 'presented/{basename}'
   },
   {
     extensions: ['.md', '.markdown'],
@@ -163,7 +163,36 @@ function ensureSafeResolvedPath(inputPath: string): string {
 }
 
 function resolveTargetName(adapter: SurfaceAdapter, sourcePath: string): string {
-  return adapter.targetName === '{basename}' ? path.basename(sourcePath) : adapter.targetName;
+  return adapter.targetName.replace('{basename}', path.basename(sourcePath));
+}
+
+
+function copyDirectoryRecursive(sourceDir: string, destinationDir: string): void {
+  const stats = fs.lstatSync(sourceDir);
+  if (!stats.isDirectory()) {
+    throw new Error(`Expected directory during ingest: ${sourceDir}`);
+  }
+
+  fs.mkdirSync(destinationDir, { recursive: true });
+
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const destinationPath = path.join(destinationDir, entry.name);
+    const entryStats = fs.lstatSync(sourcePath);
+
+    if (entryStats.isSymbolicLink()) {
+      continue;
+    }
+
+    if (entry.isDirectory()) {
+      copyDirectoryRecursive(sourcePath, destinationPath);
+      continue;
+    }
+
+    if (entry.isFile()) {
+      fs.copyFileSync(sourcePath, destinationPath);
+    }
+  }
 }
 
 function detectContentType(sourcePath: string): Detection {
@@ -461,7 +490,13 @@ function buildHtmlDocument(title: string, body: string): string {
 </html>`;
 }
 
-async function materializeArtifact(resolvedSource: string, targetPath: string, detected: Detection, title: string): Promise<void> {
+async function materializeArtifact(
+  resolvedSource: string,
+  targetPath: string,
+  detected: Detection,
+  title: string,
+  options: { originalSourcePath?: string } = {}
+): Promise<void> {
   if (detected.transform === 'markdown-to-html') {
     const raw = fs.readFileSync(resolvedSource, 'utf8');
     const rendered = await marked.parse(path.extname(resolvedSource).toLowerCase() === '.md' || path.extname(resolvedSource).toLowerCase() === '.markdown'
@@ -480,9 +515,16 @@ async function materializeArtifact(resolvedSource: string, targetPath: string, d
   }
 
   if (detected.contentType === 'text/html' && detected.sourceKind === 'html') {
-    const rawHtml = fs.readFileSync(resolvedSource, 'utf8');
-    const sanitized = buildHtmlDocument(title, wrapSurfaceContent(sanitizeSurfaceHtml(rawHtml), { surfaceKind: 'generated' }));
-    fs.writeFileSync(targetPath, sanitized);
+    const originalSourcePath = options.originalSourcePath ?? resolvedSource;
+    const originalSourceDirectory = path.dirname(originalSourcePath);
+    const presentedDirectory = path.dirname(targetPath);
+    fs.rmSync(presentedDirectory, { recursive: true, force: true });
+    copyDirectoryRecursive(originalSourceDirectory, presentedDirectory);
+
+    if (!fs.existsSync(targetPath)) {
+      throw new Error(`Rendered html surface is missing after ingest: ${targetPath}`);
+    }
+
     return;
   }
 
@@ -525,7 +567,7 @@ export async function renderSurface(input: RenderInput): Promise<RenderedSurface
   fs.copyFileSync(resolvedSource, stagedSourcePath);
 
   const targetPath = path.join(stageDir, detected.targetName);
-  await materializeArtifact(stagedSourcePath, targetPath, detected, title);
+  await materializeArtifact(stagedSourcePath, targetPath, detected, title, { originalSourcePath: resolvedSource });
 
   const manifest = createManifest({
     surfaceId,

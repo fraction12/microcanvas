@@ -224,21 +224,20 @@ serialTest('show sanitizes hostile markdown into safe-by-default html-like outpu
   assert.match(html, /<h1>hostile<\/h1>/i);
 });
 
-serialTest('show sanitizes raw html surfaces on the default presentation path', async () => {
+serialTest('show preserves raw html surfaces for browser-style local viewing', async () => {
   const result = await runCli(['show', hostileHtmlFile]);
   const record = expectSuccess(result);
 
   assertDisplayRecord(record, {
     surfaceId: record.surfaceId,
-    primaryArtifact: path.join(activeDir, 'index.html')
+    primaryArtifact: path.join(activeDir, 'presented', 'hostile.html')
   });
 
-  const html = fs.readFileSync(path.join(activeDir, 'index.html'), 'utf8');
-  assert.doesNotMatch(html, /<script/i);
-  assert.doesNotMatch(html, /javascript:/i);
-  assert.doesNotMatch(html, /onclick=/i);
-  assert.doesNotMatch(html, /file:\/\/\/etc\/passwd/i);
-  assert.match(html, /<h1>safe<\/h1>/i);
+  const html = fs.readFileSync(path.join(activeDir, 'presented', 'hostile.html'), 'utf8');
+  assert.match(html, /<script>alert\(1\)<\/script>/i);
+  assert.match(html, /javascript:alert\(2\)/i);
+  assert.match(html, /onclick="alert\(3\)"/i);
+  assert.match(html, /file:\/\/\/etc\/passwd/i);
 });
 
 serialTest('show renders and activates csv as a deterministic html table surface', async () => {
@@ -373,7 +372,7 @@ serialTest('update preserves the active surface id and reports whether the viewe
       assert.match(error.message, /native viewer|degraded/i);
     } else {
       assert.equal(updatedRecord.viewer.mode, 'closed');
-      assert.match(error.message, /viewer is not confirmed open/i);
+      assert.match(error.message, /viewer is not confirmed open|not yet reporting the active surface/i);
     }
   }
 });

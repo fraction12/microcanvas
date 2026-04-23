@@ -213,8 +213,8 @@ struct WebSurfaceView: NSViewRepresentable {
 
         private func makeWebView() -> WKWebView {
             let configuration = WKWebViewConfiguration()
-            configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-            configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+            configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+            configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
             let webView = WKWebView(frame: .zero, configuration: configuration)
             webView.setValue(false, forKey: "drawsBackground")
             webView.navigationDelegate = self
@@ -222,11 +222,15 @@ struct WebSurfaceView: NSViewRepresentable {
         }
 
         private func load(_ target: Target, in webView: WKWebView) {
-            webView.loadFileURL(target.url, allowingReadAccessTo: stagedSurfaceDirectory(for: target.url))
+            webView.loadFileURL(target.url, allowingReadAccessTo: surfaceRootDirectory(for: target.url))
         }
 
-        private func stagedSurfaceDirectory(for url: URL) -> URL {
-            url.deletingLastPathComponent()
+        private func surfaceRootDirectory(for url: URL) -> URL {
+            let parent = url.deletingLastPathComponent()
+            if parent.lastPathComponent == "presented" {
+                return parent.deletingLastPathComponent()
+            }
+            return parent
         }
 
         private func mount(_ webView: WKWebView, in container: NSView, hidden: Bool) {

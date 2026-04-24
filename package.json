@@ -43,6 +43,7 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "pack:dry-run": "npm run build && npm pack --dry-run",
     "test": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
+    "build:viewer-app": "sh apps/macos-viewer/scripts/build-app-bundle.sh",
     "install:skills": "bash skills/microcanvas-present/scripts/install-agent-skill.sh"
   },
   "dependencies": {

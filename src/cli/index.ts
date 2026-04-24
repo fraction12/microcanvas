@@ -10,10 +10,10 @@ import {
 } from 'agenttk';
 import type { MicrocanvasRecord } from './contracts.js';
 import { runRender } from './commands/render.js';
-import { runShow } from './commands/show.js';
+import { runShowFromArgs } from './commands/show.js';
 import { runSnapshot } from './commands/snapshot.js';
 import { runStatus } from './commands/status.js';
-import { runUpdate } from './commands/update.js';
+import { runUpdateFromArgs } from './commands/update.js';
 import { runVerify } from './commands/verify.js';
 import { renderCommandResult, renderToolHelp, resolvePresentationMode } from './presentation.js';
 
@@ -31,16 +31,16 @@ const tool = {
     defineCommand({
       name: 'show',
       description: 'Activate a staged surface or render and show a source file.',
-      usage: 'microcanvas show <path|surfaceId> [--json]',
-      examples: ['microcanvas show README.md', 'microcanvas show <surface-id> --json'],
-      handler: async ({ rawArgs }) => runShow(rawArgs[0])
+      usage: 'microcanvas show <path|surfaceId> [--native] [--json]',
+      examples: ['microcanvas show README.md', 'microcanvas show <surface-id> --native --json'],
+      handler: async ({ rawArgs }) => runShowFromArgs(rawArgs)
     }),
     defineCommand({
       name: 'update',
       description: 'Update the active surface from a supported source file.',
-      usage: 'microcanvas update <path> [--json]',
-      examples: ['microcanvas update README.md', 'microcanvas update README.md --json'],
-      handler: async ({ rawArgs }) => runUpdate(rawArgs[0])
+      usage: 'microcanvas update <path> [--native] [--json]',
+      examples: ['microcanvas update README.md', 'microcanvas update README.md --native --json'],
+      handler: async ({ rawArgs }) => runUpdateFromArgs(rawArgs)
     }),
     defineCommand({
       name: 'snapshot',

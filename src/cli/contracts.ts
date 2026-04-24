@@ -1,4 +1,5 @@
 import { fail, ok, type CommandFailure, type CommandResult, type CommandSuccess } from 'agenttk';
+import type { ViewerLaunchDiagnostics } from '../core/manifest.js';
 
 export type MicrocanvasResultType =
   | 'render'
@@ -15,6 +16,8 @@ export interface MicrocanvasRecord {
     mode: string;
     open: boolean;
     canVerify: boolean;
+    launch?: ViewerLaunchDiagnostics;
+    launchDiagnostics?: ViewerLaunchDiagnostics;
   };
   lock?: {
     held: boolean;
@@ -91,6 +94,28 @@ export function operationalFailure(
       message
     },
     ...options
+  });
+}
+
+export function viewerLaunchFailure(
+  type: MicrocanvasResultType,
+  message: string,
+  launch: ViewerLaunchDiagnostics | undefined
+): CommandFailure {
+  return failureResult({
+    type,
+    classification: 'transient',
+    retryable: true,
+    nextAction: 'verify_state',
+    verificationStatus: 'verification_failed',
+    partial: true,
+    error: {
+      code: 'VIEWER_LAUNCH_FAILED',
+      message,
+      details: {
+        launch
+      }
+    }
   });
 }
 

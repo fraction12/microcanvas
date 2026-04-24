@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import {
+  type ViewerHeartbeatDiagnostics,
   viewerModeHasVerificationCapability,
   viewerModeIsOpen,
   type RuntimeState,
@@ -44,23 +45,96 @@ function createViewerState(mode: ViewerState['mode'], details: Partial<ViewerSta
   };
 }
 
-function getNativeViewerState(maxAgeMs = 5000): ViewerState | null {
+export function assessNativeViewerHeartbeat(
+  runtimeState: RuntimeState = readState(),
+  maxAgeMs = 5000,
+  expectedSurfaceId: string | null = runtimeState.activeSurfaceId
+): { viewer: ViewerState | null; heartbeat: ViewerHeartbeatDiagnostics } {
   const state = readViewerRuntimeState();
-  if (!state) return null;
+  if (!state) {
+    return {
+      viewer: null,
+      heartbeat: {
+        status: 'missing',
+        expectedSurfaceId,
+        reason: 'viewer heartbeat file is missing'
+      }
+    };
+  }
 
   const ageMs = Date.now() - Date.parse(state.lastSeenAt);
-  if (!Number.isFinite(ageMs) || ageMs > maxAgeMs) return null;
-  if (!isPidRunning(state.pid)) return null;
+  const heartbeatBase = {
+    pid: state.pid,
+    lastSeenAt: state.lastSeenAt,
+    activeSurfaceId: state.activeSurfaceId ?? null,
+    expectedSurfaceId
+  };
 
-  return createViewerState('native', {
+  if (!Number.isFinite(ageMs)) {
+    return {
+      viewer: null,
+      heartbeat: {
+        ...heartbeatBase,
+        status: 'invalid',
+        reason: 'viewer heartbeat timestamp is invalid'
+      }
+    };
+  }
+
+  if (ageMs > maxAgeMs) {
+    return {
+      viewer: null,
+      heartbeat: {
+        ...heartbeatBase,
+        status: 'stale',
+        ageMs,
+        reason: `viewer heartbeat is older than ${maxAgeMs}ms`
+      }
+    };
+  }
+
+  if (!isPidRunning(state.pid)) {
+    return {
+      viewer: null,
+      heartbeat: {
+        ...heartbeatBase,
+        status: 'pid_not_running',
+        ageMs,
+        reason: 'viewer heartbeat process is not running'
+      }
+    };
+  }
+
+  if (expectedSurfaceId !== null && (state.activeSurfaceId ?? null) !== expectedSurfaceId) {
+    return {
+      viewer: null,
+      heartbeat: {
+        ...heartbeatBase,
+        status: 'surface_mismatch',
+        ageMs,
+        reason: 'viewer heartbeat does not match the active surface'
+      }
+    };
+  }
+
+  const viewer = createViewerState('native', {
     pid: state.pid,
     lastSeenAt: state.lastSeenAt,
     activeSurfaceId: state.activeSurfaceId ?? null
   });
+
+  return {
+    viewer,
+    heartbeat: {
+      ...heartbeatBase,
+      status: 'fresh',
+      ageMs
+    }
+  };
 }
 
 export function getViewerState(runtimeState: RuntimeState = readState(), maxAgeMs = 5000): ViewerState {
-  const nativeViewer = getNativeViewerState(maxAgeMs);
+  const { viewer: nativeViewer } = assessNativeViewerHeartbeat(runtimeState, maxAgeMs);
   if (nativeViewer) {
     return nativeViewer;
   }

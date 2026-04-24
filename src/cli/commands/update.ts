@@ -5,17 +5,49 @@ import { acquireLock, readLock, releaseLock } from '../../core/lock.js';
 import { paths } from '../../core/paths.js';
 import { readState, writeState } from '../../core/state.js';
 import { updateActiveSurface } from '../../core/surface.js';
-import { launchViewer } from '../../viewer/launch.js';
+import { launchViewer, nativeViewerRequiredByEnv } from '../../viewer/launch.js';
 import {
   inputFailure,
   lockFailure,
   operationalFailure,
   parsePrefixedError,
   successResult,
+  viewerLaunchFailure,
   type MicrocanvasRecord
 } from '../contracts.js';
 
-export async function runUpdate(sourcePath?: string): Promise<CommandResult<MicrocanvasRecord>> {
+function isStrictNativeFlag(value: string): boolean {
+  return value === '--native' || value === '--strict-native';
+}
+
+function parseUpdateArgs(rawArgs: string[]): { sourcePath?: string; requireNative: boolean } {
+  return {
+    sourcePath: rawArgs.find((arg) => !isStrictNativeFlag(arg)),
+    requireNative: rawArgs.some(isStrictNativeFlag) || nativeViewerRequiredByEnv()
+  };
+}
+
+function viewerWarnings(viewer: MicrocanvasRecord['viewer'], closedMessage: string): string[] | undefined {
+  const warnings: string[] = [];
+  if (viewer?.mode === 'degraded') {
+    warnings.push('Opened through degraded external display; native viewer-backed verify and snapshot are unavailable.');
+  } else if (viewer?.mode === 'closed') {
+    warnings.push(closedMessage);
+  }
+
+  if (viewer?.launch && viewer.launch.heartbeat.status !== 'fresh') {
+    warnings.push(
+      `Native viewer launch did not verify (${viewer.launch.heartbeat.status}); fallback used: ${viewer.launch.fallback.used ? 'yes' : 'no'}.`
+    );
+  }
+
+  return warnings.length > 0 ? warnings : undefined;
+}
+
+export async function runUpdate(
+  sourcePath?: string,
+  options: { requireNative?: boolean } = {}
+): Promise<CommandResult<MicrocanvasRecord>> {
   if (!sourcePath) {
     return inputFailure('update', 'INVALID_INPUT', 'update requires a source file path');
   }
@@ -29,7 +61,11 @@ export async function runUpdate(sourcePath?: string): Promise<CommandResult<Micr
 
   try {
     const updated = await updateActiveSurface(sourcePath);
-    const viewer = await launchViewer(updated.primaryArtifact);
+    const requireNative = options.requireNative ?? nativeViewerRequiredByEnv();
+    const viewer = await launchViewer(updated.primaryArtifact, {
+      requireNative,
+      expectedSurfaceId: updated.manifest.surfaceId
+    });
     const current = readState();
     writeState({
       ...current,
@@ -42,6 +78,14 @@ export async function runUpdate(sourcePath?: string): Promise<CommandResult<Micr
     releaseLock();
     releasedEarly = true;
 
+    if (requireNative && viewer.mode !== 'native') {
+      return viewerLaunchFailure(
+        'update',
+        'native viewer launch did not produce a verified heartbeat',
+        viewer.launch
+      );
+    }
+
     const result = successResult({
       type: 'update',
       id: updated.manifest.surfaceId,
@@ -52,7 +96,9 @@ export async function runUpdate(sourcePath?: string): Promise<CommandResult<Micr
         viewer: {
           mode: viewer.mode,
           open: viewer.open,
-          canVerify: viewer.verificationCapable
+          canVerify: viewer.verificationCapable,
+          launch: viewer.launch,
+          launchDiagnostics: viewer.launchDiagnostics
         },
         lock: {
           held: readLock().held
@@ -67,11 +113,16 @@ export async function runUpdate(sourcePath?: string): Promise<CommandResult<Micr
           externalToRepo: updated.manifest.source.externalToRepo
         }
       },
-      warnings: viewer.mode === 'degraded'
-        ? ['Opened through degraded external display; native viewer-backed verify and snapshot are unavailable.']
-        : viewer.mode === 'closed'
-          ? ['Surface was updated, but no viewer session could be opened.']
-          : undefined
+      warnings: viewerWarnings(
+        {
+          mode: viewer.mode,
+          open: viewer.open,
+          canVerify: viewer.verificationCapable,
+          launch: viewer.launch,
+          launchDiagnostics: viewer.launchDiagnostics
+        },
+        'Surface was updated, but no viewer session could be opened.'
+      )
     });
 
     return viewer.mode === 'degraded'
@@ -93,4 +144,9 @@ export async function runUpdate(sourcePath?: string): Promise<CommandResult<Micr
       releaseLock();
     }
   }
+}
+
+export function runUpdateFromArgs(rawArgs: string[]): Promise<CommandResult<MicrocanvasRecord>> {
+  const parsed = parseUpdateArgs(rawArgs);
+  return runUpdate(parsed.sourcePath, { requireNative: parsed.requireNative });
 }

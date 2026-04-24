@@ -5,17 +5,49 @@ import { acquireLock, readLock, releaseLock } from '../../core/lock.js';
 import { paths } from '../../core/paths.js';
 import { readState, writeState } from '../../core/state.js';
 import { getStagedSurface, promoteToActive, renderSurface } from '../../core/surface.js';
-import { launchViewer } from '../../viewer/launch.js';
+import { launchViewer, nativeViewerRequiredByEnv } from '../../viewer/launch.js';
 import {
   inputFailure,
   lockFailure,
   operationalFailure,
   parsePrefixedError,
   successResult,
+  viewerLaunchFailure,
   type MicrocanvasRecord
 } from '../contracts.js';
 
-export async function runShow(sourceOrSurfaceId?: string): Promise<CommandResult<MicrocanvasRecord>> {
+function isStrictNativeFlag(value: string): boolean {
+  return value === '--native' || value === '--strict-native';
+}
+
+function parseShowArgs(rawArgs: string[]): { sourceOrSurfaceId?: string; requireNative: boolean } {
+  return {
+    sourceOrSurfaceId: rawArgs.find((arg) => !isStrictNativeFlag(arg)),
+    requireNative: rawArgs.some(isStrictNativeFlag) || nativeViewerRequiredByEnv()
+  };
+}
+
+function viewerWarnings(viewer: MicrocanvasRecord['viewer'], closedMessage: string): string[] | undefined {
+  const warnings: string[] = [];
+  if (viewer?.mode === 'degraded') {
+    warnings.push('Opened through degraded external display; native viewer-backed verify and snapshot are unavailable.');
+  } else if (viewer?.mode === 'closed') {
+    warnings.push(closedMessage);
+  }
+
+  if (viewer?.launch && viewer.launch.heartbeat.status !== 'fresh') {
+    warnings.push(
+      `Native viewer launch did not verify (${viewer.launch.heartbeat.status}); fallback used: ${viewer.launch.fallback.used ? 'yes' : 'no'}.`
+    );
+  }
+
+  return warnings.length > 0 ? warnings : undefined;
+}
+
+export async function runShow(
+  sourceOrSurfaceId?: string,
+  options: { requireNative?: boolean } = {}
+): Promise<CommandResult<MicrocanvasRecord>> {
   if (!sourceOrSurfaceId) {
     return inputFailure('show', 'INVALID_INPUT', 'show requires a source file path or staged surface id');
   }
@@ -34,7 +66,11 @@ export async function runShow(sourceOrSurfaceId?: string): Promise<CommandResult
 
     promoteToActive(candidate.stagingDir);
     const activeEntry = path.join(paths.activeDir, candidate.manifest.entryPath);
-    const viewer = await launchViewer(activeEntry);
+    const requireNative = options.requireNative ?? nativeViewerRequiredByEnv();
+    const viewer = await launchViewer(activeEntry, {
+      requireNative,
+      expectedSurfaceId: candidate.manifest.surfaceId
+    });
     const current = readState();
     writeState({
       ...current,
@@ -47,6 +83,14 @@ export async function runShow(sourceOrSurfaceId?: string): Promise<CommandResult
     releaseLock();
     releasedEarly = true;
 
+    if (requireNative && viewer.mode !== 'native') {
+      return viewerLaunchFailure(
+        'show',
+        'native viewer launch did not produce a verified heartbeat',
+        viewer.launch
+      );
+    }
+
     const result = successResult({
       type: 'show',
       id: candidate.manifest.surfaceId,
@@ -57,7 +101,9 @@ export async function runShow(sourceOrSurfaceId?: string): Promise<CommandResult
         viewer: {
           mode: viewer.mode,
           open: viewer.open,
-          canVerify: viewer.verificationCapable
+          canVerify: viewer.verificationCapable,
+          launch: viewer.launch,
+          launchDiagnostics: viewer.launchDiagnostics
         },
         lock: {
           held: readLock().held
@@ -72,11 +118,16 @@ export async function runShow(sourceOrSurfaceId?: string): Promise<CommandResult
           externalToRepo: candidate.manifest.source.externalToRepo
         }
       },
-      warnings: viewer.mode === 'degraded'
-        ? ['Opened through degraded external display; native viewer-backed verify and snapshot are unavailable.']
-        : viewer.mode === 'closed'
-          ? ['Surface was activated, but no viewer session could be opened.']
-          : undefined
+      warnings: viewerWarnings(
+        {
+          mode: viewer.mode,
+          open: viewer.open,
+          canVerify: viewer.verificationCapable,
+          launch: viewer.launch,
+          launchDiagnostics: viewer.launchDiagnostics
+        },
+        'Surface was activated, but no viewer session could be opened.'
+      )
     });
 
     return viewer.mode === 'degraded'
@@ -98,4 +149,9 @@ export async function runShow(sourceOrSurfaceId?: string): Promise<CommandResult
       releaseLock();
     }
   }
+}
+
+export function runShowFromArgs(rawArgs: string[]): Promise<CommandResult<MicrocanvasRecord>> {
+  const parsed = parseShowArgs(rawArgs);
+  return runShow(parsed.sourceOrSurfaceId, { requireNative: parsed.requireNative });
 }

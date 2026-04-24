@@ -140,7 +140,9 @@ Microcanvas separates "something opened" from "the native viewer is fully availa
 
 This matters in practice:
 
+- `show` and `update` prefer the packaged `MicrocanvasViewer.app` on macOS, then fall back to development launch paths when needed
 - `show` and `update` only report `native` after the viewer heartbeat confirms readiness, and the native app brings its window to the front when new content is presented when macOS allows it
+- `show --native` and `update --native` require native verification and return `VIEWER_LAUNCH_FAILED` instead of using degraded fallback
 - raw `.html` and `.htm` surfaces are presented as real local browser-style content by default, with JavaScript enabled and local asset access scoped to the ingested surface copy
 - Markdown/code/table/Mermaid surfaces still render through Microcanvas-owned HTML presentation output
 - if an older native viewer session is still hanging around, Microcanvas clears that stale session before trusting a new launch attempt
@@ -164,7 +166,7 @@ Success responses return:
 Failure responses return:
 
 - `ok: false`
-- `error.code`: stable domain codes such as `INVALID_INPUT`, `UNSUPPORTED_CONTENT`, `LOCKED_TRY_LATER`, `SURFACE_NOT_FOUND`, `UPDATE_NOT_SUPPORTED`, or `VERIFY_FAILED`
+- `error.code`: stable domain codes such as `INVALID_INPUT`, `UNSUPPORTED_CONTENT`, `LOCKED_TRY_LATER`, `SURFACE_NOT_FOUND`, `UPDATE_NOT_SUPPORTED`, `VIEWER_LAUNCH_FAILED`, or `VERIFY_FAILED`
 - `error.message`: human-readable failure detail
 
 Example degraded `show` response:
@@ -279,12 +281,15 @@ For concrete agent flows, see `skills/microcanvas-present/references/cookbook.md
 
 ```bash
 npm install
+npm run build:viewer-app
 npm run check
 npm test
 npm run pack:dry-run
 ```
 
 The current implementation is small on purpose. Surface detection and materialization run through the adapter registry in [`src/core/surface.ts`](src/core/surface.ts), which keeps format support explicit and easier to extend without turning the content model into soup.
+
+`npm run build:viewer-app` builds the SwiftPM viewer product and materializes `apps/macos-viewer/build/MicrocanvasViewer.app`. Generated app output is ignored; rebuild it locally when you need to test native launch behavior.
 
 When macOS viewer changes are involved and your environment supports it, run `cd apps/macos-viewer/MicrocanvasViewer && swift test`.
 

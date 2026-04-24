@@ -16,6 +16,7 @@ Microcanvas is still early-stage, so the best contributions are the ones that ke
 ```bash
 npm install
 npm link
+npm run build:viewer-app
 npm run check
 npm test
 npm run pack:dry-run
@@ -35,6 +36,7 @@ Run the checks that match the files you touched:
 
 - `npm run check` for TypeScript validation
 - `npm test` for the JS test suite
+- `npm run build:viewer-app` when native viewer launch behavior changes
 - `cd apps/macos-viewer/MicrocanvasViewer && swift test` when the macOS viewer or Swift package changes are involved and the environment supports it
 - `npm run pack:dry-run` before packaging or repository-hygiene changes that affect published contents
 
@@ -43,7 +45,7 @@ Run the checks that match the files you touched:
 - user-visible behavior is clear
 - command output stays stable and tool-friendly
 - supported-format handling stays explicit
-- degraded and native viewer behavior remain easy to reason about
+- degraded and native viewer behavior remain easy to reason about, including strict `--native` flows
 - tests cover new behavior or regressions when practical
 
 ## Style Notes

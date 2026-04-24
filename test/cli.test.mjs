@@ -618,6 +618,52 @@ serialTest('stale viewer heartbeat alone does not report native-open status', as
   assert.equal(record.viewer.canVerify, false);
 });
 
+serialTest('missing viewer heartbeat does not report native-open status', async () => {
+  writeRuntimeState({
+    activeSurfaceId: 'surface-missing-heartbeat',
+    viewerMode: 'native',
+    viewerOpen: true,
+    updatedAt: new Date().toISOString()
+  });
+  writeActiveManifest('surface-missing-heartbeat');
+  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>missing heartbeat</body></html>');
+
+  assert.equal(getViewerOpenStatus(), false);
+  const status = await runCli(['status']);
+  const record = expectSuccess(status);
+  assert.equal(record.surfaceId, 'surface-missing-heartbeat');
+  assert.equal(record.viewer.mode, 'closed');
+  assert.equal(record.viewer.open, false);
+  assert.equal(record.viewer.canVerify, false);
+});
+
+serialTest('viewer heartbeat for a different active surface does not verify the current surface', async () => {
+  writeRuntimeState({
+    activeSurfaceId: 'surface-current',
+    viewerMode: 'native',
+    viewerOpen: true,
+    updatedAt: new Date().toISOString()
+  });
+  writeActiveManifest('surface-current');
+  fs.writeFileSync(path.join(activeDir, 'index.html'), '<html><body>current surface</body></html>');
+  writeViewerState({
+    pid: process.pid,
+    lastSeenAt: new Date().toISOString(),
+    activeSurfaceId: 'surface-other'
+  });
+
+  const status = await runCli(['status']);
+  const record = expectSuccess(status);
+  assert.equal(record.surfaceId, 'surface-current');
+  assert.notEqual(record.viewer.mode, 'native');
+  assert.equal(record.viewer.open, false);
+  assert.equal(record.viewer.canVerify, false);
+
+  const verify = await runCli(['verify']);
+  const error = expectFailure(verify, 'VERIFY_FAILED');
+  assert.match(error.message, /not yet reporting the active surface|viewer is not confirmed open/i);
+});
+
 serialTest('verify fails when only degraded viewer mode is available', async () => {
   writeRuntimeState({
     activeSurfaceId: 'surface-stale',

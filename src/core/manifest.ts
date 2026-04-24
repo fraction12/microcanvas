@@ -47,6 +47,56 @@ export interface ViewerState {
   pid?: number;
   lastSeenAt?: string;
   activeSurfaceId?: string | null;
+  launch?: ViewerLaunchDiagnostics;
+  launchDiagnostics?: ViewerLaunchDiagnostics;
+}
+
+export type NativeViewerLaunchMethod = 'app-bundle' | 'swiftpm-binary';
+
+export type ViewerHeartbeatStatus =
+  | 'missing'
+  | 'invalid'
+  | 'stale'
+  | 'pid_not_running'
+  | 'pid_mismatch'
+  | 'surface_mismatch'
+  | 'fresh';
+
+export interface ViewerHeartbeatDiagnostics {
+  status: ViewerHeartbeatStatus;
+  pid?: number;
+  lastSeenAt?: string;
+  ageMs?: number;
+  activeSurfaceId?: string | null;
+  expectedSurfaceId?: string | null;
+  reason?: string;
+}
+
+export interface ViewerLaunchAttempt {
+  method: NativeViewerLaunchMethod;
+  path?: string;
+  available: boolean;
+  launched: boolean;
+  reused?: boolean;
+  reason?: string;
+  error?: string;
+}
+
+export interface ViewerLaunchDiagnostics {
+  attemptedMethod?: NativeViewerLaunchMethod;
+  attempts: ViewerLaunchAttempt[];
+  heartbeat: ViewerHeartbeatDiagnostics;
+  timeoutMs: number;
+  waitedMs: number;
+  failureReason?: string;
+  fallbackDecision: 'degraded' | 'none';
+  fallback: {
+    allowed: boolean;
+    used: boolean;
+    method?: 'external-open';
+    reason?: string;
+    strict: boolean;
+  };
 }
 
 export function createManifest(input: {

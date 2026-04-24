@@ -1,4 +1,13 @@
-import { fail, ok, type CommandFailure, type CommandResult, type CommandSuccess } from 'agenttk';
+import {
+  fail,
+  invalidInput,
+  lockedOrBusy,
+  ok,
+  operationalFailure as agentOperationalFailure,
+  type CommandFailure,
+  type CommandResult,
+  type CommandSuccess
+} from 'agenttk';
 import type { ViewerLaunchDiagnostics } from '../core/manifest.js';
 
 export type MicrocanvasResultType =
@@ -40,10 +49,6 @@ type SuccessOptions = Omit<CommandSuccess<MicrocanvasRecord>, 'ok' | 'type' | 'r
   record: MicrocanvasRecord;
 };
 
-type FailureOptions = Omit<CommandFailure, 'ok'> & {
-  type?: MicrocanvasResultType;
-};
-
 export function successResult(options: SuccessOptions): CommandSuccess<MicrocanvasRecord> {
   return ok({
     destination: 'runtime',
@@ -51,33 +56,17 @@ export function successResult(options: SuccessOptions): CommandSuccess<Microcanv
   });
 }
 
-export function failureResult(options: FailureOptions): CommandFailure {
-  return fail(options);
-}
-
 export function lockFailure(type: MicrocanvasResultType, reason?: string): CommandFailure {
-  return failureResult({
+  return lockedOrBusy(reason ?? 'runtime is locked', {
     type,
-    classification: 'transient',
-    retryable: true,
-    nextAction: 'retry',
-    error: {
-      code: 'LOCKED_TRY_LATER',
-      message: reason ?? 'runtime is locked'
-    }
+    code: 'LOCKED_TRY_LATER'
   });
 }
 
 export function inputFailure(type: MicrocanvasResultType, code: string, message: string): CommandFailure {
-  return failureResult({
+  return invalidInput(message, {
     type,
-    classification: 'user_action_required',
-    retryable: false,
-    nextAction: 'fix_input',
-    error: {
-      code,
-      message
-    }
+    code
   });
 }
 
@@ -85,16 +74,20 @@ export function operationalFailure(
   type: MicrocanvasResultType,
   code: string,
   message: string,
-  options: Omit<FailureOptions, 'type' | 'error'> = {}
+  options: Omit<CommandFailure, 'ok' | 'type' | 'error'> = {}
 ): CommandFailure {
-  return failureResult({
+  const result = agentOperationalFailure(message, {
     type,
-    error: {
-      code,
-      message
-    },
-    ...options
+    code,
+    classification: options.classification,
+    retryable: options.retryable,
+    nextAction: options.nextAction
   });
+
+  return {
+    ...result,
+    ...options
+  };
 }
 
 export function viewerLaunchFailure(
@@ -102,7 +95,7 @@ export function viewerLaunchFailure(
   message: string,
   launch: ViewerLaunchDiagnostics | undefined
 ): CommandFailure {
-  return failureResult({
+  return fail({
     type,
     classification: 'transient',
     retryable: true,

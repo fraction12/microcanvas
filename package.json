@@ -47,11 +47,11 @@
     "install:skills": "bash skills/microcanvas-present/scripts/install-agent-skill.sh"
   },
   "dependencies": {
-    "agenttk": "^0.1.5",
+    "agenttk": "^0.1.6",
     "marked": "^15.0.12",
+    "mermaid": "^11.12.0",
     "picocolors": "^1.1.1",
-    "sanitize-html": "^2.13.0",
-    "mermaid": "^11.12.0"
+    "sanitize-html": "^2.13.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -1,5 +1,5 @@
 import type { CommandResult } from 'agenttk';
-import { markUnverified } from 'agenttk';
+import { firstPositional, hasFlag, markUnverified } from 'agenttk';
 import path from 'node:path';
 import { acquireLock, readLock, releaseLock } from '../../core/lock.js';
 import { paths } from '../../core/paths.js';
@@ -16,14 +16,12 @@ import {
   type MicrocanvasRecord
 } from '../contracts.js';
 
-function isStrictNativeFlag(value: string): boolean {
-  return value === '--native' || value === '--strict-native';
-}
+const strictNativeFlags = ['--native', '--strict-native'];
 
 function parseUpdateArgs(rawArgs: string[]): { sourcePath?: string; requireNative: boolean } {
   return {
-    sourcePath: rawArgs.find((arg) => !isStrictNativeFlag(arg)),
-    requireNative: rawArgs.some(isStrictNativeFlag) || nativeViewerRequiredByEnv()
+    sourcePath: firstPositional(rawArgs, strictNativeFlags),
+    requireNative: hasFlag(rawArgs, strictNativeFlags) || nativeViewerRequiredByEnv()
   };
 }
 

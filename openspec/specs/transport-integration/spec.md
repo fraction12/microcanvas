@@ -39,18 +39,24 @@ The system SHALL expose active write-lock contention clearly through its CLI con
 - **THEN** the CLI returns a clear try-again-later style result instead of hanging silently or corrupting state
 
 ### Requirement: Return machine-friendly CLI outcomes
-The system SHALL return stable, machine-friendly CLI outcomes for core operational states.
+The system SHALL return AgentTK-native, machine-friendly CLI outcomes for core operational states.
 
 #### Scenario: CLI operation completes or fails
 - **WHEN** a caller invokes a CLI operation
-- **THEN** the CLI returns a stable result shape that clearly distinguishes success, lock contention, invalid input, unsupported content, and viewer-launch failure
+- **THEN** the CLI returns an AgentTK-compatible success or failure envelope
+- **AND** domain-specific outcomes remain distinguishable through stable result types, warnings, verification metadata, and failure codes such as lock contention, invalid input, unsupported content, missing surface, and verification failure
+
+#### Scenario: Degraded display is reported explicitly
+- **WHEN** `show` or `update` succeeds through degraded external-open mode
+- **THEN** the CLI returns success rather than pretending the operation failed
+- **AND** the result explicitly reports that the runtime is unverified or degraded and that native viewer-backed flows are unavailable
 
 ### Requirement: Provide a status command for runtime inspection
-The system SHALL expose runtime inspection through a dedicated status-style CLI command.
+The system SHALL expose runtime inspection through a dedicated status-style CLI command that reports viewer mode and verification capability.
 
 #### Scenario: Caller checks runtime state
 - **WHEN** a caller requests status
-- **THEN** the CLI returns whether the viewer is open, whether a write lock is held, what surface is currently active, and enough manifest-derived state to identify the active entry artifact
+- **THEN** the CLI returns whether a native viewer is confirmed open, whether the runtime is in degraded external-open mode, whether a write lock is held, what surface is currently active, and enough manifest-derived state to identify the active entry artifact
 
 ### Requirement: Distinguish mutating and non-mutating commands
 The system SHALL define which CLI commands mutate runtime state and therefore require the write lock.
@@ -62,4 +68,47 @@ The system SHALL define which CLI commands mutate runtime state and therefore re
 #### Scenario: Mutating command updates filesystem-backed runtime state
 - **WHEN** a caller invokes a mutating command such as render, show, or update
 - **THEN** the command respects the write lock and updates the canonical surface-root state through the defined runtime model
+
+### Requirement: Expose packaged native viewer launch outcomes
+The system SHALL return machine-friendly CLI outcomes that distinguish packaged native viewer launch success, native launch failure, and degraded fallback.
+
+#### Scenario: Packaged native launch succeeds
+- **WHEN** a caller shows a surface and the packaged native viewer launches with a fresh heartbeat
+- **THEN** the CLI result identifies the viewer as native
+- **AND** the result remains compatible with existing status, verify, and snapshot consumers
+
+#### Scenario: Packaged native launch fails with fallback allowed
+- **WHEN** a caller shows a surface and packaged native launch does not produce a valid heartbeat
+- **AND** degraded fallback is allowed
+- **THEN** the CLI may open the surface through the degraded display path
+- **AND** the result includes a warning that native launch failed before fallback
+
+#### Scenario: Packaged native launch fails with native required
+- **WHEN** a caller requires native viewer mode and packaged native launch does not produce a valid heartbeat
+- **THEN** the CLI returns a viewer-launch failure result
+- **AND** it does not claim the surface is native verified
+
+### Requirement: Provide native launch diagnostics
+The system SHALL include enough diagnostics for callers and developers to understand why native viewer launch did not verify.
+
+#### Scenario: Native launch does not verify
+- **WHEN** native viewer launch fails to verify
+- **THEN** the CLI result identifies the attempted launch method, heartbeat state, timeout or mismatch reason, and fallback decision
+
+#### Scenario: Status is queried after native launch
+- **WHEN** a caller queries status after a native launch attempt
+- **THEN** status reports the best confirmed viewer mode from runtime state
+- **AND** it does not infer native capability from the existence of a binary or app bundle alone
+
+### Requirement: Publish only the current CLI contract artifacts
+The system SHALL ensure packaged CLI artifacts align with the current source-owned command and result contract.
+
+#### Scenario: Packaged CLI output is checked
+- **WHEN** the project prepares or dry-runs the npm package
+- **THEN** the packaged CLI output includes only files generated from the current tracked CLI, core, and viewer source
+- **AND** it excludes stale generated contract files that are no longer produced from source
+
+#### Scenario: Removed internal contract artifact lingers
+- **WHEN** a prior internal CLI/result artifact no longer has a source file or supported import path
+- **THEN** that artifact is removed from generated output before package publication
 

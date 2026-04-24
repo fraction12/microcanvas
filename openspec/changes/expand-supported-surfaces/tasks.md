@@ -1,8 +1,8 @@
 ## 1. Surface expansion roadmap
 
-- [ ] 1.1 Define explicit supported surface families and support tiers.
-- [ ] 1.2 Keep unsupported formats on an honest `UNSUPPORTED_CONTENT` path.
-- [ ] 1.3 Document the staged rollout order for new surface families.
+- [x] 1.1 Define explicit supported surface families and support tiers.
+- [x] 1.2 Keep unsupported formats on an honest `UNSUPPORTED_CONTENT` path.
+- [x] 1.3 Document the staged rollout order for new surface families.
 
 ## 2. Image surfaces
 
@@ -33,5 +33,5 @@
 
 ## 6. Validation
 
-- [ ] 6.1 Validate the OpenSpec change.
+- [x] 6.1 Validate the OpenSpec change.
 - [ ] 6.2 Keep the proposal aligned with actual implemented display paths.

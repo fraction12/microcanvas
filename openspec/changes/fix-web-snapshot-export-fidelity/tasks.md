@@ -1,7 +1,7 @@
 ## 1. Snapshot fidelity
 - [x] 1.1 Make the snapshot/export path wait for Mermaid/web readiness explicitly.
-- [ ] 1.2 Capture the painted SVG/content rather than a blank or premature frame.
-- [ ] 1.3 Preserve upright orientation and image fidelity in exported PNGs.
+- [x] 1.2 Capture the painted SVG/content rather than a blank or premature frame.
+- [x] 1.3 Preserve upright orientation and image fidelity in exported PNGs.
 
 ## 2. Regression coverage
 - [ ] 2.1 Add or update tests for a Mermaid fixture that exports visibly.

@@ -8,6 +8,12 @@ import { fileURLToPath } from 'node:url';
 import { getViewerOpenStatus } from '../dist/viewer/state.js';
 import { requestViewerSnapshot } from '../dist/viewer/snapshot.js';
 import { runSnapshot } from '../dist/cli/commands/snapshot.js';
+import {
+  readSourceHistory,
+  recordSourceHistoryFromManifest,
+  sourceHistoryFilePath,
+  sourceHistoryLimit
+} from '../dist/core/history.js';
 
 process.env.MICROCANVAS_NATIVE_VIEWER_PID = String(process.pid);
 
@@ -40,6 +46,7 @@ const viewerStateFile = path.join(runtimeRoot, 'viewer-state.json');
 const viewerRequestFile = path.join(runtimeRoot, 'viewer-request.json');
 const viewerResponseFile = path.join(runtimeRoot, 'viewer-response.json');
 const stateFile = path.join(runtimeRoot, 'state.json');
+const historyFile = path.join(runtimeRoot, 'source-history-test.json');
 
 async function runCli(args) {
   const { stdout } = await execFileAsync('node', [cliPath, ...args, '--json'], {
@@ -47,7 +54,8 @@ async function runCli(args) {
     env: {
       ...process.env,
       MICROCANVAS_DISABLE_NATIVE_VIEWER: '1',
-      MICROCANVAS_NATIVE_VIEWER_PID: String(process.pid)
+      MICROCANVAS_NATIVE_VIEWER_PID: String(process.pid),
+      MICROCANVAS_SOURCE_HISTORY_FILE: historyFile
     }
   });
   return JSON.parse(stdout);
@@ -59,7 +67,8 @@ async function runCliText(args) {
     env: {
       ...process.env,
       MICROCANVAS_DISABLE_NATIVE_VIEWER: '1',
-      MICROCANVAS_NATIVE_VIEWER_PID: String(process.pid)
+      MICROCANVAS_NATIVE_VIEWER_PID: String(process.pid),
+      MICROCANVAS_SOURCE_HISTORY_FILE: historyFile
     }
   });
   return { stdout, stderr };
@@ -106,6 +115,28 @@ function writeActiveManifest(surfaceId, overrides = {}) {
     },
     ...overrides
   }, null, 2));
+}
+
+function fakeHistoryManifest(originalPath, overrides = {}) {
+  const sourceFileName = path.basename(originalPath);
+  return {
+    surfaceId: overrides.surfaceId ?? `surface-${sourceFileName}`,
+    title: overrides.title ?? sourceFileName,
+    contentType: overrides.contentType ?? 'text/html',
+    entryPath: overrides.entryPath ?? 'index.html',
+    createdAt: overrides.createdAt ?? new Date().toISOString(),
+    updatedAt: overrides.updatedAt ?? new Date().toISOString(),
+    sourceKind: overrides.sourceKind ?? 'generated',
+    renderMode: overrides.renderMode ?? 'wkwebview',
+    source: {
+      originalPath,
+      sourceFileName,
+      stagedPath: path.join(activeDir, 'source', sourceFileName),
+      stagedRelativePath: path.join('source', sourceFileName),
+      ingestedAt: new Date().toISOString(),
+      externalToRepo: overrides.externalToRepo ?? false
+    }
+  };
 }
 
 async function waitForViewerRequest(timeoutMs = 5000) {
@@ -515,6 +546,49 @@ serialTest('update can replace the active surface from a new external source pat
 
   const html = fs.readFileSync(path.join(activeDir, 'index.html'), 'utf8');
   assert.match(html, /outside root/i);
+});
+
+serialTest('source history is private metadata, newest-first, and deduped by canonical source path', async () => {
+  await runCli(['show', insideFile]);
+  await runCli(['update', outsideFile]);
+  await runCli(['show', insideFile]);
+
+  const history = readSourceHistory(historyFile);
+  assert.equal(history.entries.length, 2);
+  assert.equal(history.entries[0].originalPath, insideFile);
+  assert.equal(history.entries[0].sourceFileName, path.basename(insideFile));
+  assert.equal(history.entries[0].showCount, 2);
+  assert.equal(history.entries[1].originalPath, fs.realpathSync(outsideFile));
+  assert.equal(history.entries[1].externalToRepo, true);
+});
+
+serialTest('source history path override and fifty-entry cap stay stable', () => {
+  const overrideFile = path.join(runtimeRoot, 'override-history.json');
+  const previous = process.env.MICROCANVAS_SOURCE_HISTORY_FILE;
+  process.env.MICROCANVAS_SOURCE_HISTORY_FILE = overrideFile;
+  try {
+    assert.equal(sourceHistoryFilePath(), overrideFile);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.MICROCANVAS_SOURCE_HISTORY_FILE;
+    } else {
+      process.env.MICROCANVAS_SOURCE_HISTORY_FILE = previous;
+    }
+  }
+
+  for (let index = 0; index < sourceHistoryLimit + 5; index += 1) {
+    recordSourceHistoryFromManifest(
+      fakeHistoryManifest(path.join(fixtureDir, `history-${index}.md`), {
+        title: `History ${index}`
+      }),
+      historyFile
+    );
+  }
+
+  const history = readSourceHistory(historyFile);
+  assert.equal(history.entries.length, sourceHistoryLimit);
+  assert.equal(history.entries[0].displayName, `History ${sourceHistoryLimit + 4}`);
+  assert.equal(history.entries.at(-1).displayName, 'History 5');
 });
 
 serialTest('unsupported path schemes are rejected clearly', async () => {

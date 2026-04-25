@@ -53,6 +53,10 @@ final class ViewerModel: ObservableObject {
     @Published var pendingURL: URL?
     @Published var statusText: String = "No active surface"
     @Published var loadFailureMessage: String?
+    @Published var sourceHistory: [SourceHistoryEntry] = []
+    @Published var historyPanelExpanded = false
+    @Published var historyReloadMessage: String?
+    @Published var historyReloadInFlightPath: String?
     @Published private(set) var readiness = ViewerReadinessCoordinator()
 
     private let fileManager = FileManager.default
@@ -61,6 +65,8 @@ final class ViewerModel: ObservableObject {
     private var lastSnapshotRequestId: String?
     private let repoRootOverride: URL?
     private let lastGoodSurfaceStore = LastGoodSurfaceStore()
+    private let sourceHistoryStore: SourceHistoryStore
+    private let sourceHistoryReloader: SourceHistoryReloader
     private let snapshotter: PresentedSurfaceSnapshotter
     private weak var presentedWebView: WKWebView?
     private var presentedWebSurfaceId: String?
@@ -84,13 +90,18 @@ final class ViewerModel: ObservableObject {
 
     init(
         repoRootOverride: URL? = ViewerModel.resolveRepoRootOverride(),
+        sourceHistoryStore: SourceHistoryStore = SourceHistoryStore(),
+        sourceHistoryReloader: SourceHistoryReloader = SourceHistoryReloader(),
         snapshotter: PresentedSurfaceSnapshotter = PresentedSurfaceSnapshotter()
     ) {
         self.repoRootOverride = repoRootOverride
+        self.sourceHistoryStore = sourceHistoryStore
+        self.sourceHistoryReloader = sourceHistoryReloader
         self.snapshotter = snapshotter
     }
 
     func startPolling() {
+        refreshSourceHistory()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -107,6 +118,7 @@ final class ViewerModel: ObservableObject {
     }
 
     func reload() {
+        refreshSourceHistory()
         do {
             let repoRoot = try locateRepoRoot()
             let runtimeRoot = repoRoot.appendingPathComponent("runtime", isDirectory: true)
@@ -189,6 +201,39 @@ final class ViewerModel: ObservableObject {
                 loadFailureMessage = error.localizedDescription
             }
             writeViewerState()
+        }
+    }
+
+    func toggleHistoryPanel() {
+        historyPanelExpanded.toggle()
+        refreshSourceHistory()
+    }
+
+    func refreshSourceHistory() {
+        sourceHistory = sourceHistoryStore.loadEntries()
+    }
+
+    func showHistoryEntry(_ entry: SourceHistoryEntry) {
+        guard entry.isAvailable else {
+            historyReloadMessage = "Source missing"
+            return
+        }
+
+        historyReloadInFlightPath = entry.originalPath
+        historyReloadMessage = "Loading \(entry.displayName)"
+
+        Task { @MainActor in
+            do {
+                let repoRoot = try locateRepoRoot()
+                try await sourceHistoryReloader.reload(sourcePath: entry.originalPath, repoRoot: repoRoot)
+                historyReloadMessage = nil
+                historyReloadInFlightPath = nil
+                refreshSourceHistory()
+                reload()
+            } catch {
+                historyReloadMessage = "Could not load source"
+                historyReloadInFlightPath = nil
+            }
         }
     }
 

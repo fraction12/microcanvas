@@ -2,6 +2,7 @@ import type { CommandResult } from 'agenttk';
 import { firstPositional, hasFlag, markUnverified } from 'agenttk';
 import path from 'node:path';
 import { acquireLock, readLock, releaseLock } from '../../core/lock.js';
+import { recordSourceHistoryFromManifest } from '../../core/history.js';
 import { paths } from '../../core/paths.js';
 import { readState, writeState } from '../../core/state.js';
 import { getStagedSurface, promoteToActive, renderSurface } from '../../core/surface.js';
@@ -77,6 +78,11 @@ export async function runShow(
       viewerOpen: viewer.open,
       updatedAt: new Date().toISOString()
     });
+    try {
+      recordSourceHistoryFromManifest(candidate.manifest);
+    } catch {
+      // History is private convenience metadata; display success must not depend on it.
+    }
 
     releaseLock();
     releasedEarly = true;

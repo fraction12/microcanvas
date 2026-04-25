@@ -14,7 +14,9 @@ TARGETS=(
 
 for rel in "${TARGETS[@]}"; do
   dest="$REPO_ROOT/$rel"
-  mkdir -p "$dest"
-  cp "$SKILL_ROOT/SKILL.md" "$dest/SKILL.md"
-  echo "installed $rel"
+  parent="$(dirname "$dest")"
+  mkdir -p "$parent"
+  rm -rf "$dest"
+  ln -s "../../skills/microcanvas-present" "$dest"
+  echo "symlinked $rel -> ../../skills/microcanvas-present"
 done

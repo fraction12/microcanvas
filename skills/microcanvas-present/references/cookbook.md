@@ -13,7 +13,9 @@ skills/microcanvas-present/scripts/run-microcanvas.sh show /absolute/path/to/fil
 Then inspect:
 - `ok`
 - `record.viewer.mode`
+- `record.viewer.open`
 - `record.artifacts.primary`
+- `warnings`
 
 ## 2. Update the thing already on screen
 
@@ -44,6 +46,12 @@ Interpretation:
 - `degraded` -> visible presentation may be fine, but do not claim native verification
 - `closed` -> there is no confirmed viewer session
 
+If the task requires native launch instead of fallback, use:
+
+```bash
+skills/microcanvas-present/scripts/run-microcanvas.sh show /absolute/path/to/file --native --json
+```
+
 ## 5. Ask for strict confirmation
 
 ```bash
@@ -60,7 +68,15 @@ skills/microcanvas-present/scripts/run-microcanvas.sh snapshot --json
 
 Use only when `viewer.mode` is `native`.
 
-## 7. Recover from common mistakes
+## 7. Show Mermaid or diagram sources properly
+
+```bash
+skills/microcanvas-present/scripts/run-microcanvas.sh show /absolute/path/to/diagram.mmd --json
+```
+
+Use Microcanvas directly for Mermaid sources instead of pasting raw diagram text into chat.
+
+## 8. Recover from common mistakes
 
 ### Mistake: used `update` before anything was active
 Use `show` first.
@@ -69,7 +85,10 @@ Use `show` first.
 Stop. Use `show` on the real file.
 
 ### Mistake: command succeeded in degraded mode
-That is still a successful presentation path, but do not claim strict verification or native snapshot support.
+That is still a successful presentation path, but do not claim strict verification or native snapshot support. Read `warnings` and `nextAction` instead of pretending the viewer is fully healthy.
 
 ### Mistake: unsupported file type
 Convert deliberately, or surface `UNSUPPORTED_CONTENT` honestly.
+
+### Mistake: assuming viewer history is a stable automation API
+It is not. The source-history panel is a viewer convenience feature; agents should still drive Microcanvas through the CLI contract (`show`, `update`, `status`, `verify`, `snapshot`).

@@ -32,6 +32,7 @@ const updateFile = path.join(fixtureDir, 'updated.md');
 const unsupportedFile = path.join(fixtureDir, 'unsupported.zip');
 const csvFile = path.join(fixtureDir, 'sample-table.csv');
 const mermaidFile = path.join(fixtureDir, 'sample-diagram.mmd');
+const largeStyledMermaidFile = path.join(fixtureDir, 'large-styled-diagram.mmd');
 const hostileMarkdownFile = path.join(fixtureDir, 'hostile.md');
 const hostileHtmlFile = path.join(fixtureDir, 'hostile.html');
 const symlinkSourceFile = path.join(fixtureDir, 'inside-link.md');
@@ -203,6 +204,21 @@ function assertDisplayVerification(result, viewerMode) {
   assert.match((result.warnings ?? []).join('\n'), /no viewer session|could be opened/i);
 }
 
+function assertMermaidNavigationContract(html) {
+  assert.match(html, /class="[^"]*\bdiagram-toolbar\b[^"]*"/i);
+  for (const action of ['zoom-in', 'zoom-out', 'fit', 'actual-size']) {
+    assert.match(html, new RegExp(`<button\\b[^>]*data-diagram-action="${action}"`, 'i'));
+  }
+  assert.match(html, /class="[^"]*\bdiagram-viewport\b[^"]*"/i);
+  assert.match(html, /class="[^"]*\bdiagram-stage\b[^"]*"/i);
+  assert.match(html, /stage\.innerHTML\s*=\s*renderResult\.svg/);
+  assert.doesNotMatch(html, /output\.innerHTML\s*=\s*renderResult\.svg/);
+  assert.doesNotMatch(
+    html,
+    /(?:\.diagram-frame\s+\.label|\.diagram-frame\s+\.nodeLabel|\.diagram-frame\s+\.edgeLabel)[^{]*\{[^}]*color\s*:\s*#17212b\s*!important/i
+  );
+}
+
 test.before(() => {
   fs.mkdirSync(fixtureDir, { recursive: true });
   fs.writeFileSync(insideFile, '# Hello\n\nInside root fixture.\n');
@@ -328,6 +344,32 @@ serialTest('show renders mermaid source files into diagram html automatically', 
   assert.match(html, /Viewer/);
   assert.ok(fs.existsSync(path.join(activeDir, 'assets', 'mermaid.min.js')));
   assert.match(html, /window\.mermaid \|\| window\.__esbuild_esm_mermaid_nm\?\.mermaid/);
+  assertMermaidNavigationContract(html);
+});
+
+serialTest('render preserves large styled mermaid source colors without forced label overrides', async () => {
+  const result = await runCli(['render', largeStyledMermaidFile]);
+  const record = expectSuccess(result);
+
+  assert.ok(record.surfaceId);
+  assert.ok(record.artifacts.primary);
+
+  const stagingDir = path.dirname(record.artifacts.primary);
+  const manifest = JSON.parse(fs.readFileSync(path.join(stagingDir, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.entryPath, 'index.html');
+  assert.equal(manifest.renderMode, 'wkwebview');
+  assert.equal(manifest.sourceKind, 'generated');
+  assert.equal(manifest.contentType, 'text/html');
+
+  const html = fs.readFileSync(record.artifacts.primary, 'utf8');
+  assert.match(html, /classDef darkNode fill:#17212b,stroke:#5eb1ff,color:#ffffff/i);
+  assert.match(
+    html,
+    /MICROCANVAS_MERMAID_SOURCE[\s\S]*classDef darkNode fill:#17212b,stroke:#5eb1ff,color:#ffffff/i
+  );
+  assert.match(html, /Orchestrator/);
+  assert.match(html, /Publishing/);
+  assertMermaidNavigationContract(html);
 });
 
 serialTest('show renders and activates supported image files across formats', async () => {

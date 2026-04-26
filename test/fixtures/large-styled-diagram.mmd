@@ -1,0 +1,50 @@
+flowchart LR
+  subgraph Intake["Intake"]
+    Brief["Brief"]
+    Assets["Assets"]
+    Constraints["Constraints"]
+  end
+
+  subgraph Planning["Planning"]
+    Orchestrator["Orchestrator"]
+    Spec["OpenSpec Change"]
+    Tasks["Task Breakdown"]
+  end
+
+  subgraph Build["Build"]
+    CLI["CLI Renderer"]
+    Runtime["Runtime Model"]
+    Viewer["Native Viewer"]
+  end
+
+  subgraph Verify["Verify"]
+    Snapshot["Snapshot"]
+    Regression["Regression Tests"]
+    Review["Review Notes"]
+  end
+
+  subgraph Ship["Ship"]
+    Docs["Docs"]
+    Release["Release"]
+    Publishing["Publishing"]
+  end
+
+  Brief --> Orchestrator
+  Assets --> Orchestrator
+  Constraints --> Spec
+  Orchestrator --> Spec
+  Spec --> Tasks
+  Tasks --> CLI
+  Tasks --> Runtime
+  CLI --> Viewer
+  Runtime --> Viewer
+  Viewer --> Snapshot
+  Snapshot --> Regression
+  Regression --> Review
+  Review --> Docs
+  Review --> Release
+  Docs --> Publishing
+  Release --> Publishing
+
+  class Brief,Assets,Constraints,Orchestrator,Spec,Tasks,CLI,Runtime,Viewer,Snapshot,Regression,Review,Docs,Release,Publishing darkNode
+  classDef darkNode fill:#17212b,stroke:#5eb1ff,color:#ffffff

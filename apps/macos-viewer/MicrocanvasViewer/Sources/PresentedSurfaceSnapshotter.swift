@@ -145,7 +145,10 @@ private extension WKWebView {
         try await withCheckedThrowingContinuation { continuation in
             evaluateJavaScript(
                 """
-                (() => Boolean(document?.querySelector?.('.diagram-render-output svg')))();
+                (() => Boolean(
+                  document?.querySelector?.('.diagram-render-output .diagram-stage svg') ||
+                  document?.querySelector?.('.diagram-render-output svg')
+                ))();
                 """
             ) { value, error in
                 if let error {
@@ -201,15 +204,34 @@ private extension WKWebView {
 
                     (async () => {
                       try {
-                        const svg = document.querySelector('.diagram-render-output svg');
+                        const svg = document.querySelector('.diagram-render-output .diagram-stage svg') ||
+                          document.querySelector('.diagram-render-output svg');
                         if (!svg) {
                           throw new Error('No rendered SVG available');
                         }
 
-                        const rect = svg.getBoundingClientRect();
+                        const numericAttribute = (name) => {
+                          const raw = svg.getAttribute(name);
+                          if (!raw) {
+                            return 0;
+                          }
+                          const parsed = Number.parseFloat(raw);
+                          return Number.isFinite(parsed) ? parsed : 0;
+                        };
+                        const viewBox = svg.viewBox?.baseVal;
                         const bbox = typeof svg.getBBox === 'function' ? svg.getBBox() : null;
-                        const width = Math.max(Math.ceil(rect.width || 0), Math.ceil(bbox?.width || 0), 1);
-                        const height = Math.max(Math.ceil(rect.height || 0), Math.ceil(bbox?.height || 0), 1);
+                        const width = Math.max(
+                          Math.ceil(viewBox?.width || 0),
+                          Math.ceil(numericAttribute('width')),
+                          Math.ceil(bbox?.width || 0),
+                          1
+                        );
+                        const height = Math.max(
+                          Math.ceil(viewBox?.height || 0),
+                          Math.ceil(numericAttribute('height')),
+                          Math.ceil(bbox?.height || 0),
+                          1
+                        );
                         const clone = svg.cloneNode(true);
                         clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
                         clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
@@ -305,7 +327,8 @@ private extension WKWebView {
                   const state = dataset?.microcanvasRenderState ?? null;
                   const hasReadinessContract = Object.prototype.hasOwnProperty.call(window, '__microcanvasSurfaceReady') ||
                     Object.prototype.hasOwnProperty.call(dataset ?? {}, 'microcanvasRenderState');
-                  const svg = document?.querySelector?.('.diagram-render-output svg');
+                  const svg = document?.querySelector?.('.diagram-render-output .diagram-stage svg') ||
+                    document?.querySelector?.('.diagram-render-output svg');
                   const bbox = svg && typeof svg.getBBox === 'function' ? svg.getBBox() : null;
                   const rect = svg && typeof svg.getBoundingClientRect === 'function' ? svg.getBoundingClientRect() : null;
                   const svgReady = Boolean(

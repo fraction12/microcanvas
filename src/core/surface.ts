@@ -562,7 +562,17 @@ function buildMermaidDocument(title: string, source: string): string {
     </header>
     <section class="diagram-frame">
       <div class="diagram-frame__label">Rendered canvas</div>
-      <div class="diagram-render-output" aria-label="Rendered Mermaid diagram"></div>
+      <div class="diagram-render-output" aria-label="Rendered Mermaid diagram">
+        <div class="diagram-toolbar" aria-label="Diagram navigation controls">
+          <button type="button" data-diagram-action="zoom-out" aria-label="Zoom out">−</button>
+          <button type="button" data-diagram-action="zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" data-diagram-action="fit">Fit</button>
+          <button type="button" data-diagram-action="actual-size">100%</button>
+        </div>
+        <div class="diagram-viewport">
+          <div class="diagram-stage"></div>
+        </div>
+      </div>
       <p class="diagram-error" hidden></p>
     </section>
     <details class="diagram-source">
@@ -584,10 +594,12 @@ function buildMermaidDocument(title: string, source: string): string {
 
       (async () => {
         const output = document.querySelector('.diagram-render-output');
+        const viewport = document.querySelector('.diagram-viewport');
+        const stage = document.querySelector('.diagram-stage');
         const error = document.querySelector('.diagram-error');
         const mermaidApi = window.mermaid || window.__esbuild_esm_mermaid_nm?.mermaid;
 
-        if (!output || !error || !mermaidApi) {
+        if (!output || !viewport || !stage || !error || !mermaidApi) {
           if (error) {
             error.hidden = false;
             error.textContent = 'Mermaid runtime failed to load.';
@@ -596,6 +608,152 @@ function buildMermaidDocument(title: string, source: string): string {
           window.__microcanvasSurfaceReady = true;
           return;
         }
+
+        const readableMinimumScale = 0.72;
+        const minimumScale = 0.12;
+        const maximumScale = 4;
+        const zoomStep = 1.2;
+        const transform = { x: 0, y: 0, scale: 1 };
+        const diagramSize = { width: 1, height: 1 };
+        let drag = null;
+        let userNavigated = false;
+
+        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+        const applyTransform = () => {
+          stage.style.transform = \`translate(\${transform.x}px, \${transform.y}px) scale(\${transform.scale})\`;
+          stage.dataset.scale = transform.scale.toFixed(3);
+        };
+
+        const getViewportSize = () => ({
+          width: Math.max(1, viewport.clientWidth),
+          height: Math.max(1, viewport.clientHeight)
+        });
+
+        const getSvgSize = (svg) => {
+          const viewBox = svg.viewBox?.baseVal;
+          if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
+            return { width: viewBox.width, height: viewBox.height };
+          }
+
+          const widthAttribute = Number.parseFloat(svg.getAttribute('width') || '');
+          const heightAttribute = Number.parseFloat(svg.getAttribute('height') || '');
+          if (Number.isFinite(widthAttribute) && Number.isFinite(heightAttribute) && widthAttribute > 0 && heightAttribute > 0) {
+            return { width: widthAttribute, height: heightAttribute };
+          }
+
+          try {
+            const box = svg.getBBox();
+            if (box.width > 0 && box.height > 0) {
+              return { width: box.width, height: box.height };
+            }
+          } catch {
+            // Some SVG content cannot be measured with getBBox until fully painted.
+          }
+
+          const rect = svg.getBoundingClientRect();
+          return {
+            width: Math.max(1, rect.width),
+            height: Math.max(1, rect.height)
+          };
+        };
+
+        const getFitScale = () => {
+          const viewportSize = getViewportSize();
+          const padding = 32;
+          const availableWidth = Math.max(1, viewportSize.width - padding);
+          const availableHeight = Math.max(1, viewportSize.height - padding);
+          return clamp(
+            Math.min(availableWidth / diagramSize.width, availableHeight / diagramSize.height),
+            minimumScale,
+            maximumScale
+          );
+        };
+
+        const centerAtScale = (scale) => {
+          const viewportSize = getViewportSize();
+          transform.scale = clamp(scale, minimumScale, maximumScale);
+          transform.x = (viewportSize.width - diagramSize.width * transform.scale) / 2;
+          transform.y = (viewportSize.height - diagramSize.height * transform.scale) / 2;
+          applyTransform();
+        };
+
+        const zoomAtCenter = (nextScale) => {
+          const viewportSize = getViewportSize();
+          const clampedScale = clamp(nextScale, minimumScale, maximumScale);
+          const centerX = viewportSize.width / 2;
+          const centerY = viewportSize.height / 2;
+          const ratio = clampedScale / transform.scale;
+          transform.x = centerX - (centerX - transform.x) * ratio;
+          transform.y = centerY - (centerY - transform.y) * ratio;
+          transform.scale = clampedScale;
+          userNavigated = true;
+          applyTransform();
+        };
+
+        const initializeTransform = () => {
+          const fitScale = getFitScale();
+          centerAtScale(fitScale >= readableMinimumScale ? fitScale : readableMinimumScale);
+        };
+
+        output.querySelectorAll('[data-diagram-action]').forEach((button) => {
+          button.addEventListener('click', () => {
+            const action = button.getAttribute('data-diagram-action');
+            userNavigated = true;
+            if (action === 'zoom-in') {
+              zoomAtCenter(transform.scale * zoomStep);
+            } else if (action === 'zoom-out') {
+              zoomAtCenter(transform.scale / zoomStep);
+            } else if (action === 'fit') {
+              centerAtScale(getFitScale());
+            } else if (action === 'actual-size') {
+              centerAtScale(1);
+            }
+          });
+        });
+
+        viewport.addEventListener('pointerdown', (event) => {
+          if (event.pointerType === 'mouse' && event.button !== 0) {
+            return;
+          }
+          drag = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            originX: transform.x,
+            originY: transform.y
+          };
+          viewport.setPointerCapture(event.pointerId);
+          viewport.classList.add('is-panning');
+          userNavigated = true;
+        });
+
+        viewport.addEventListener('pointermove', (event) => {
+          if (!drag || drag.pointerId !== event.pointerId) {
+            return;
+          }
+          transform.x = drag.originX + event.clientX - drag.startX;
+          transform.y = drag.originY + event.clientY - drag.startY;
+          applyTransform();
+        });
+
+        const endDrag = (event) => {
+          if (!drag || drag.pointerId !== event.pointerId) {
+            return;
+          }
+          drag = null;
+          viewport.classList.remove('is-panning');
+        };
+
+        viewport.addEventListener('pointerup', endDrag);
+        viewport.addEventListener('pointercancel', endDrag);
+        viewport.addEventListener('wheel', (event) => {
+          event.preventDefault();
+          transform.x -= event.deltaX;
+          transform.y -= event.deltaY;
+          userNavigated = true;
+          applyTransform();
+        }, { passive: false });
 
         mermaidApi.initialize({
           startOnLoad: false,
@@ -627,15 +785,34 @@ function buildMermaidDocument(title: string, source: string): string {
 
         try {
           const renderResult = await mermaidApi.render('microcanvas-mermaid-diagram', MICROCANVAS_MERMAID_SOURCE);
-          output.innerHTML = renderResult.svg;
+          stage.innerHTML = renderResult.svg;
           if (typeof renderResult.bindFunctions === 'function') {
-            renderResult.bindFunctions(output);
+            renderResult.bindFunctions(stage);
           }
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-          const renderedSvg = output.querySelector('svg');
+          const renderedSvg = stage.querySelector('svg');
           if (!renderedSvg) {
             throw new Error('Mermaid did not produce an SVG output.');
           }
+          const measuredSize = getSvgSize(renderedSvg);
+          diagramSize.width = measuredSize.width;
+          diagramSize.height = measuredSize.height;
+          renderedSvg.style.maxWidth = 'none';
+          renderedSvg.style.width = \`\${diagramSize.width}px\`;
+          renderedSvg.style.height = \`\${diagramSize.height}px\`;
+          stage.style.width = \`\${diagramSize.width}px\`;
+          stage.style.height = \`\${diagramSize.height}px\`;
+          initializeTransform();
+
+          if ('ResizeObserver' in window) {
+            const resizeObserver = new ResizeObserver(() => {
+              if (!userNavigated) {
+                initializeTransform();
+              }
+            });
+            resizeObserver.observe(viewport);
+          }
+
           document.documentElement.dataset.microcanvasRenderState = 'ready';
           window.__microcanvasSurfaceReady = true;
         } catch (cause) {
@@ -695,7 +872,7 @@ function buildMermaidDocument(title: string, source: string): string {
         font-size: 0.98rem;
       }
       .diagram-frame {
-        overflow: auto;
+        overflow: hidden;
         margin-top: 22px;
         padding: 22px;
         border-radius: 22px;
@@ -721,18 +898,71 @@ function buildMermaidDocument(title: string, source: string): string {
         letter-spacing: 0.02em;
       }
       .diagram-render-output {
-        min-height: 140px;
+        display: grid;
+        gap: 12px;
+        min-height: 420px;
+      }
+      .diagram-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .diagram-toolbar button {
+        appearance: none;
+        min-width: 40px;
+        height: 34px;
+        padding: 0 12px;
+        border: 1px solid rgba(15, 59, 83, 0.18);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.82);
+        color: #0f3b53;
+        font: inherit;
+        font-size: 0.84rem;
+        font-weight: 700;
+        line-height: 1;
+        cursor: pointer;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+      }
+      .diagram-toolbar button:hover {
+        background: #ffffff;
+        border-color: rgba(15, 59, 83, 0.34);
+      }
+      .diagram-toolbar button:focus-visible {
+        outline: 3px solid rgba(15, 76, 129, 0.24);
+        outline-offset: 2px;
+      }
+      .diagram-viewport {
+        position: relative;
+        height: clamp(420px, 64vh, 760px);
+        min-height: 360px;
+        overflow: hidden;
+        border: 1px solid rgba(15, 59, 83, 0.12);
+        border-radius: 16px;
+        background:
+          linear-gradient(rgba(15, 59, 83, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(15, 59, 83, 0.04) 1px, transparent 1px),
+          rgba(255, 255, 255, 0.58);
+        background-size: 28px 28px;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+      }
+      .diagram-viewport.is-panning {
+        cursor: grabbing;
+      }
+      .diagram-stage {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform-origin: 0 0;
+        will-change: transform;
       }
       .diagram-frame svg {
         display: block;
-        max-width: 100%;
         height: auto;
-        margin: 0 auto;
-      }
-      .diagram-frame .label,
-      .diagram-frame .nodeLabel,
-      .diagram-frame .edgeLabel {
-        color: #17212b !important;
+        max-width: none;
       }
       .diagram-error {
         margin: 0;

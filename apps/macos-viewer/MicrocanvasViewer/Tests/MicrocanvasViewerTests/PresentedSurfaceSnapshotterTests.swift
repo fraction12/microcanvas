@@ -73,6 +73,27 @@ final class PresentedSurfaceSnapshotterTests: XCTestCase {
         XCTAssertNotNil(NSImage(contentsOf: destination))
     }
 
+    func testSnapshotMermaidStageSVGIgnoresToolbarSVGAndViewportTransform() async throws {
+        let root = makeRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let destination = root.appendingPathComponent("snapshot.png", isDirectory: false)
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        webView.loadHTMLString(makeMermaidStageHTML(transform: "translate(-80px, -40px) scale(2)"), baseURL: nil)
+        try await waitForWebViewReady(webView)
+
+        let snapshotter = PresentedSurfaceSnapshotter()
+        try await snapshotter.capture(surface: .webView(webView), to: destination)
+
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: Data(contentsOf: destination)))
+        XCTAssertEqual(bitmap.pixelsWide, 120)
+        XCTAssertEqual(bitmap.pixelsHigh, 80)
+
+        let centerColor = try XCTUnwrap(bitmap.colorAt(x: 60, y: 40)?.usingColorSpace(.deviceRGB))
+        XCTAssertGreaterThan(centerColor.blueComponent, 0.6)
+        XCTAssertLessThan(centerColor.redComponent, 0.4)
+    }
+
     func testTryHandleSnapshotRequestCarriesDecodedRequestIntoAsyncResponse() async throws {
         let root = makeRoot()
         let runtimeRoot = root.appendingPathComponent("runtime", isDirectory: true)
@@ -304,6 +325,72 @@ final class PresentedSurfaceSnapshotterTests: XCTestCase {
         }
 
         try png.write(to: destination)
+    }
+
+    private func makeMermaidStageHTML(transform: String) -> String {
+        """
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              body { margin: 0; }
+              .diagram-stage { transform: \(transform); transform-origin: 0 0; }
+            </style>
+          </head>
+          <body>
+            <div class="diagram-render-output">
+              <div class="diagram-toolbar">
+                <svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="12" height="12" fill="#dc2626" />
+                </svg>
+              </div>
+              <div class="diagram-viewport">
+                <div class="diagram-stage">
+                  <svg width="120" height="80" viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="120" height="80" fill="#1d4ed8" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <script>
+              window.__microcanvasSurfaceReady = true;
+              document.documentElement.dataset.microcanvasRenderState = 'ready';
+            </script>
+          </body>
+        </html>
+        """
+    }
+
+    private func waitForWebViewReady(_ webView: WKWebView) async throws {
+        let deadline = Date().addingTimeInterval(2)
+
+        while Date() < deadline {
+            let ready = try? await evaluateBool(
+                "Boolean(window.__microcanvasSurfaceReady)",
+                in: webView
+            )
+            if ready == true {
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        XCTFail("Timed out waiting for web view readiness")
+        throw CancellationError()
+    }
+
+    private func evaluateBool(_ script: String, in webView: WKWebView) async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            webView.evaluateJavaScript(script) { value, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                continuation.resume(returning: value as? Bool ?? false)
+            }
+        }
     }
 
     private func writeRequest(_ request: SnapshotRequest, in runtimeRoot: URL) throws {

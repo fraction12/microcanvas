@@ -1,0 +1,35 @@
+flowchart TB
+  subgraph Inputs["Local Computer Operator Inputs"]
+    Screen["Screen Frames"]
+    Task["User Task"]
+    Memory["Local Memory"]
+  end
+
+  subgraph Model["Local Computer Operator Model Architecture"]
+    Perception["Perception Encoder"]
+    Planner["Action Planner"]
+    Executor["Computer Action Decoder"]
+  end
+
+  subgraph Runtime["Local Runtime"]
+    Sandbox["Secure Desktop Session"]
+    Tools["Mouse + Keyboard Tools"]
+    Verifier["State Verifier"]
+  end
+
+  Screen --> Perception
+  Task --> Planner
+  Memory --> Planner
+  Perception --> Planner
+  Planner --> Executor
+  Executor --> Tools
+  Tools --> Sandbox
+  Sandbox --> Verifier
+  Verifier --> Planner
+
+  class Perception,Planner,Executor operatorNode
+  class Screen,Task,Memory inputNode
+  class Sandbox,Tools,Verifier runtimeNode
+  classDef operatorNode fill:#111827,stroke:#60a5fa,color:#f8fafc
+  classDef inputNode fill:#1f2937,stroke:#93c5fd,color:#eff6ff
+  classDef runtimeNode fill:#0f172a,stroke:#38bdf8,color:#f0f9ff

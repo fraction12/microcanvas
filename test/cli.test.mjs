@@ -33,6 +33,7 @@ const unsupportedFile = path.join(fixtureDir, 'unsupported.zip');
 const csvFile = path.join(fixtureDir, 'sample-table.csv');
 const mermaidFile = path.join(fixtureDir, 'sample-diagram.mmd');
 const largeStyledMermaidFile = path.join(fixtureDir, 'large-styled-diagram.mmd');
+const localArchitectureMermaidFile = path.join(fixtureDir, 'local-computer-operator-architecture.mmd');
 const hostileMarkdownFile = path.join(fixtureDir, 'hostile.md');
 const hostileHtmlFile = path.join(fixtureDir, 'hostile.html');
 const symlinkSourceFile = path.join(fixtureDir, 'inside-link.md');
@@ -219,6 +220,107 @@ function assertMermaidNavigationContract(html) {
   );
 }
 
+const neutralSurfaceTokens = [
+  '--surface-bg',
+  '--surface-canvas',
+  '--surface-raised',
+  '--surface-ink',
+  '--surface-muted',
+  '--surface-line',
+  '--surface-soft-line',
+  '--surface-accent',
+  '--surface-accent-soft'
+];
+
+const oldDominantSurfacePalette = [
+  '#f6f1e7',
+  '#f8f6f0',
+  '#fff8eb',
+  '#fff9ef',
+  '#fffaf0',
+  '#fff6dd',
+  '#f5eee3',
+  '#f3ead8',
+  '#d7c3a3',
+  '#d9c3a0',
+  '#d9be88',
+  '#c8ae80',
+  '#d97706',
+  '#f59e0b',
+  '#eab308',
+  '#9a6700',
+  '#0f3b53'
+];
+
+function extractMicrocanvasCss(html) {
+  return [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)]
+    .map((match) => match[1])
+    .join('\n');
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertNeutralSurfaceThemeContract(html, surfaceKind) {
+  const css = extractMicrocanvasCss(html);
+  assert.ok(css.length > 0, `${surfaceKind} output should include Microcanvas-owned CSS`);
+
+  for (const token of neutralSurfaceTokens) {
+    assert.ok(new RegExp(`${escapeRegExp(token)}\\s*:`).test(css), `${surfaceKind} CSS should define ${token}`);
+  }
+
+  assert.ok(/background(?:-color)?\s*:\s*var\(--surface-bg\)/.test(css), `${surfaceKind} CSS should use --surface-bg for page chrome`);
+  assert.ok(/color\s*:\s*var\(--surface-ink\)/.test(css), `${surfaceKind} CSS should use --surface-ink for primary text`);
+  assert.ok(/border(?:-[^:]+)?\s*:[^;]*var\(--surface-(?:line|soft-line)\)/.test(css), `${surfaceKind} CSS should use shared line tokens`);
+  assert.ok(/var\(--surface-accent\)/.test(css), `${surfaceKind} CSS should consume the shared accent token`);
+
+  const normalizedCss = css.toLowerCase();
+  for (const color of oldDominantSurfacePalette) {
+    assert.equal(
+      normalizedCss.includes(color),
+      false,
+      `${surfaceKind} Microcanvas-owned CSS should not include old dominant palette value ${color}`
+    );
+  }
+}
+
+function assertMermaidGeneratedConfigContract(html) {
+  assert.ok(/mermaidApi\.initialize\(\{[\s\S]*theme:\s*'base'/.test(html), 'Mermaid output should use the base theme for configured defaults');
+  assert.ok(/flowchart:\s*\{[\s\S]*htmlLabels:\s*false/.test(html), 'Mermaid output should render flowchart labels as SVG text');
+  assert.doesNotMatch(html, /htmlLabels:\s*true/);
+
+  const initializeStart = html.indexOf('mermaidApi.initialize({');
+  const initializeEnd = initializeStart === -1 ? -1 : html.indexOf('try {', initializeStart);
+  assert.notEqual(initializeStart, -1, 'Mermaid output should initialize the Mermaid runtime');
+  assert.notEqual(initializeEnd, -1, 'Mermaid initialization should be structurally discoverable');
+  const initializeSource = html.slice(initializeStart, initializeEnd).toLowerCase();
+  for (const color of oldDominantSurfacePalette) {
+    assert.equal(
+      initializeSource.includes(color),
+      false,
+      `Mermaid default config should not include old dominant palette value ${color}`
+    );
+  }
+}
+
+function assertMermaidStyledNodeReadabilityContract(html, expectedClassDefs) {
+  assertMermaidGeneratedConfigContract(html);
+  assert.match(html, /parseMermaidClassStyles/);
+  assert.match(html, /applyMermaidSourceLabelColors/);
+  assert.match(html, /label\.setAttribute\('fill', color\)/);
+
+  for (const classDef of expectedClassDefs) {
+    assert.match(html, classDef.sourcePattern);
+    assert.match(html, classDef.embeddedSourcePattern);
+  }
+
+  assert.doesNotMatch(
+    html,
+    /(?:\.diagram-frame\s+\.label|\.diagram-frame\s+\.nodeLabel|\.diagram-frame\s+\.edgeLabel)[^{]*\{[^}]*color\s*:\s*(?:#111827|#17212b|black)\s*!important/i
+  );
+}
+
 test.before(() => {
   fs.mkdirSync(fixtureDir, { recursive: true });
   fs.writeFileSync(insideFile, '# Hello\n\nInside root fixture.\n');
@@ -257,7 +359,7 @@ serialTest('show renders and activates an inside-root markdown file with explici
   assert.match(html, /<main class="surface-shell">/);
   assert.match(html, /<article class="surface-card">/);
   assert.match(html, /color-scheme:\s*light;/);
-  assert.match(html, /color:\s*#17212b;/);
+  assertNeutralSurfaceThemeContract(html, 'Markdown');
 });
 
 serialTest('show sanitizes hostile markdown into safe-by-default html-like output', async () => {
@@ -313,7 +415,7 @@ serialTest('show renders and activates csv as a deterministic html table surface
   assert.match(html, /<main class="surface-shell surface-shell--table">/);
   assert.match(html, /<div class="table-scroll">/);
   assert.match(html, /<table class="data-table">/);
-  assert.match(html, /color:\s*#17212b;/);
+  assertNeutralSurfaceThemeContract(html, 'CSV');
   assert.match(html, /<thead><tr><th scope="col">name<\/th><th scope="col">role<\/th><th scope="col">notes<\/th><\/tr><\/thead>/);
   assert.match(html, /<tbody><tr><td>Atlas<\/td><td>owner<\/td><td>Keeps scope tight<\/td><\/tr>/);
   assert.match(html, /Uses &quot;escaped quotes&quot; cleanly/);
@@ -344,6 +446,8 @@ serialTest('show renders mermaid source files into diagram html automatically', 
   assert.match(html, /Viewer/);
   assert.ok(fs.existsSync(path.join(activeDir, 'assets', 'mermaid.min.js')));
   assert.match(html, /window\.mermaid \|\| window\.__esbuild_esm_mermaid_nm\?\.mermaid/);
+  assertNeutralSurfaceThemeContract(html, 'Mermaid');
+  assertMermaidGeneratedConfigContract(html);
   assertMermaidNavigationContract(html);
 });
 
@@ -362,13 +466,48 @@ serialTest('render preserves large styled mermaid source colors without forced l
   assert.equal(manifest.contentType, 'text/html');
 
   const html = fs.readFileSync(record.artifacts.primary, 'utf8');
-  assert.match(html, /classDef darkNode fill:#17212b,stroke:#5eb1ff,color:#ffffff/i);
-  assert.match(
-    html,
-    /MICROCANVAS_MERMAID_SOURCE[\s\S]*classDef darkNode fill:#17212b,stroke:#5eb1ff,color:#ffffff/i
-  );
+  assertMermaidStyledNodeReadabilityContract(html, [
+    {
+      sourcePattern: /classDef darkNode fill:#17212b,stroke:#5eb1ff,color:#ffffff/i,
+      embeddedSourcePattern: /MICROCANVAS_MERMAID_SOURCE[\s\S]*classDef darkNode fill:#17212b,stroke:#5eb1ff,color:#ffffff/i
+    }
+  ]);
   assert.match(html, /Orchestrator/);
   assert.match(html, /Publishing/);
+  assertMermaidNavigationContract(html);
+});
+
+serialTest('render preserves Local Computer Operator architecture dark styled node labels', async () => {
+  const result = await runCli(['render', localArchitectureMermaidFile]);
+  const record = expectSuccess(result);
+
+  assert.ok(record.surfaceId);
+  assert.ok(record.artifacts.primary);
+
+  const stagingDir = path.dirname(record.artifacts.primary);
+  const manifest = JSON.parse(fs.readFileSync(path.join(stagingDir, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.entryPath, 'index.html');
+  assert.equal(manifest.renderMode, 'wkwebview');
+  assert.equal(manifest.sourceKind, 'generated');
+  assert.equal(manifest.contentType, 'text/html');
+
+  const html = fs.readFileSync(record.artifacts.primary, 'utf8');
+  assertMermaidStyledNodeReadabilityContract(html, [
+    {
+      sourcePattern: /classDef operatorNode fill:#111827,stroke:#60a5fa,color:#f8fafc/i,
+      embeddedSourcePattern: /MICROCANVAS_MERMAID_SOURCE[\s\S]*classDef operatorNode fill:#111827,stroke:#60a5fa,color:#f8fafc/i
+    },
+    {
+      sourcePattern: /classDef inputNode fill:#1f2937,stroke:#93c5fd,color:#eff6ff/i,
+      embeddedSourcePattern: /MICROCANVAS_MERMAID_SOURCE[\s\S]*classDef inputNode fill:#1f2937,stroke:#93c5fd,color:#eff6ff/i
+    },
+    {
+      sourcePattern: /classDef runtimeNode fill:#0f172a,stroke:#38bdf8,color:#f0f9ff/i,
+      embeddedSourcePattern: /MICROCANVAS_MERMAID_SOURCE[\s\S]*classDef runtimeNode fill:#0f172a,stroke:#38bdf8,color:#f0f9ff/i
+    }
+  ]);
+  assert.match(html, /Local Computer Operator Model Architecture/);
+  assert.match(html, /Action Planner/);
   assertMermaidNavigationContract(html);
 });
 

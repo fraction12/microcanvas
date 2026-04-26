@@ -380,21 +380,21 @@ function buildHtmlDocument(title: string, body: string): string {
     <style>
       :root {
         color-scheme: light;
-        color: #17212b;
-        --surface-ink: #17212b;
-        --surface-muted: #52606d;
-        --surface-line: rgba(31, 41, 55, 0.14);
-        --surface-soft-line: rgba(31, 41, 55, 0.08);
-        --surface-paper: rgba(255, 252, 246, 0.88);
-        --surface-paper-strong: rgba(255, 255, 255, 0.94);
-        --surface-tint: rgba(234, 179, 8, 0.12);
-        --surface-shadow: 0 24px 60px rgba(15, 23, 42, 0.10);
+        color: var(--surface-ink);
+        --surface-bg: #f6f7f9;
+        --surface-canvas: #ffffff;
+        --surface-raised: #f9fafb;
+        --surface-ink: #111827;
+        --surface-muted: #5b6472;
+        --surface-line: rgba(17, 24, 39, 0.14);
+        --surface-soft-line: rgba(17, 24, 39, 0.08);
+        --surface-accent: #2563eb;
+        --surface-accent-soft: rgba(37, 99, 235, 0.10);
+        --surface-danger: #dc2626;
+        --surface-shadow: 0 24px 60px rgba(17, 24, 39, 0.10);
       }
       html {
-        background:
-          radial-gradient(circle at top left, rgba(15, 23, 42, 0.08), transparent 28%),
-          radial-gradient(circle at top right, rgba(217, 119, 6, 0.10), transparent 26%),
-          linear-gradient(180deg, #f6f1e7 0%, #f8f6f0 42%, #eef3f7 100%);
+        background: var(--surface-bg);
       }
       body {
         margin: 0;
@@ -424,21 +424,20 @@ function buildHtmlDocument(title: string, body: string): string {
       .surface-card {
         position: relative;
         overflow: hidden;
-        background: linear-gradient(180deg, var(--surface-paper-strong) 0%, var(--surface-paper) 100%);
+        background: var(--surface-canvas);
         border: 1px solid var(--surface-line);
-        border-radius: 26px;
+        border-radius: 8px;
         box-shadow: var(--surface-shadow);
         padding: 30px 34px 34px;
         color: var(--surface-ink);
-        backdrop-filter: blur(10px);
       }
       .surface-card::before {
         content: '';
         position: absolute;
         inset: 0 0 auto;
-        height: 4px;
-        background: linear-gradient(90deg, #d97706 0%, #f59e0b 38%, #0f3b53 100%);
-        opacity: 0.9;
+        height: 3px;
+        background: var(--surface-accent);
+        opacity: 0.95;
       }
       .surface-card > :first-child {
         margin-top: 0;
@@ -454,13 +453,13 @@ function buildHtmlDocument(title: string, body: string): string {
       }
       pre {
         padding: 16px 18px;
-        border-radius: 14px;
+        border-radius: 8px;
         overflow-x: auto;
-        background: rgba(15, 23, 42, 0.055);
+        background: var(--surface-raised);
         border: 1px solid var(--surface-soft-line);
       }
       a {
-        color: #0f4c81;
+        color: var(--surface-accent);
       }
       table {
         width: 100%;
@@ -470,15 +469,15 @@ function buildHtmlDocument(title: string, body: string): string {
       }
       th, td {
         padding: 12px 14px;
-        border-right: 1px solid rgba(127, 127, 127, 0.24);
-        border-bottom: 1px solid rgba(127, 127, 127, 0.24);
+        border-right: 1px solid var(--surface-soft-line);
+        border-bottom: 1px solid var(--surface-soft-line);
         text-align: left;
         vertical-align: top;
-        background: rgba(255, 255, 255, 0.75);
-        color: #17212b;
+        background: var(--surface-canvas);
+        color: var(--surface-ink);
       }
       th {
-        background: rgba(15, 23, 42, 0.06);
+        background: var(--surface-raised);
         font-weight: 600;
       }
       thead th:first-child {
@@ -502,9 +501,9 @@ function buildHtmlDocument(title: string, body: string): string {
         overflow-x: auto;
         margin: 18px 0 0;
         border: 1px solid var(--surface-line);
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.7);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+        border-radius: 8px;
+        background: var(--surface-canvas);
+        box-shadow: inset 0 1px 0 var(--surface-soft-line);
       }
       .table-scroll > table {
         min-width: 100%;
@@ -619,6 +618,79 @@ function buildMermaidDocument(title: string, source: string): string {
         let userNavigated = false;
 
         const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+        const parseMermaidClassStyles = (source) => {
+          const styles = new Map();
+          const assignments = new Map();
+          const lines = source.split(/\\r?\\n/);
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            const classDef = trimmed.match(/^classDef\\s+([^\\s]+)\\s+(.+)$/);
+            if (classDef) {
+              const classNames = classDef[1].split(',').map((name) => name.trim()).filter(Boolean);
+              const declarations = Object.fromEntries(
+                classDef[2]
+                  .split(',')
+                  .map((part) => part.trim().split(/:(.+)/).slice(0, 2))
+                  .filter(([name, value]) => name && value)
+                  .map(([name, value]) => [name.trim(), value.trim()])
+              );
+
+              for (const className of classNames) {
+                styles.set(className, declarations);
+              }
+              continue;
+            }
+
+            const classAssignment = trimmed.match(/^class\\s+([^\\s]+)\\s+([^\\s;]+)\\s*;?$/);
+            if (classAssignment) {
+              const nodeIds = classAssignment[1].split(',').map((name) => name.trim()).filter(Boolean);
+              const classNames = classAssignment[2].split(',').map((name) => name.trim()).filter(Boolean);
+
+              for (const nodeId of nodeIds) {
+                const existing = assignments.get(nodeId) || [];
+                assignments.set(nodeId, [...existing, ...classNames]);
+              }
+            }
+          }
+
+          return { styles, assignments };
+        };
+
+        const applyMermaidSourceLabelColors = (svg) => {
+          const { styles, assignments } = parseMermaidClassStyles(MICROCANVAS_MERMAID_SOURCE);
+          if (styles.size === 0 || assignments.size === 0) {
+            return;
+          }
+
+          const applyColor = (node, color) => {
+            node.querySelectorAll('text, tspan').forEach((label) => {
+              label.setAttribute('fill', color);
+              label.style.fill = color;
+              label.style.color = color;
+            });
+            node.querySelectorAll('foreignObject, foreignObject *').forEach((label) => {
+              label.style.color = color;
+              label.style.fill = color;
+            });
+          };
+
+          svg.querySelectorAll('g.node').forEach((node) => {
+            const nodeId = String(node.id || '').replace(/^flowchart-/, '').replace(/-\\d+$/, '');
+            const classNames = new Set([
+              ...Array.from(node.classList || []),
+              ...(assignments.get(nodeId) || [])
+            ]);
+
+            for (const className of classNames) {
+              const color = styles.get(className)?.color;
+              if (color) {
+                applyColor(node, color);
+              }
+            }
+          });
+        };
 
         const applyTransform = () => {
           stage.style.transform = \`translate(\${transform.x}px, \${transform.y}px) scale(\${transform.scale})\`;
@@ -761,24 +833,24 @@ function buildMermaidDocument(title: string, source: string): string {
           theme: 'base',
           themeVariables: {
             fontFamily: '"SF Pro Text", "Segoe UI", sans-serif',
-            primaryColor: '#fff8eb',
-            primaryTextColor: '#17212b',
-            primaryBorderColor: '#d7c3a3',
-            lineColor: '#31556d',
-            secondaryColor: '#f5eee3',
-            tertiaryColor: '#eef3f7',
-            clusterBkg: '#fff9ef',
-            clusterBorder: '#d9c3a0',
-            edgeLabelBackground: '#fffaf0',
-            actorBkg: '#f3ead8',
-            actorBorder: '#c8ae80',
-            signalColor: '#31556d',
-            noteBkgColor: '#fff6dd',
-            noteBorderColor: '#d9be88'
+            primaryColor: '#ffffff',
+            primaryTextColor: '#111827',
+            primaryBorderColor: '#d1d5db',
+            lineColor: '#4b5563',
+            secondaryColor: '#f9fafb',
+            tertiaryColor: '#f3f4f6',
+            clusterBkg: '#ffffff',
+            clusterBorder: '#d1d5db',
+            edgeLabelBackground: '#ffffff',
+            actorBkg: '#f9fafb',
+            actorBorder: '#d1d5db',
+            signalColor: '#4b5563',
+            noteBkgColor: '#f9fafb',
+            noteBorderColor: '#d1d5db'
           },
           flowchart: {
             useMaxWidth: true,
-            htmlLabels: true,
+            htmlLabels: false,
             curve: 'basis'
           }
         });
@@ -794,6 +866,7 @@ function buildMermaidDocument(title: string, source: string): string {
           if (!renderedSvg) {
             throw new Error('Mermaid did not produce an SVG output.');
           }
+          applyMermaidSourceLabelColors(renderedSvg);
           const measuredSize = getSvgSize(renderedSvg);
           diagramSize.width = measuredSize.width;
           diagramSize.height = measuredSize.height;
@@ -858,7 +931,7 @@ function buildMermaidDocument(title: string, source: string): string {
         letter-spacing: 0.12em;
         font-size: 0.72rem;
         font-weight: 700;
-        color: #9a6700;
+        color: var(--surface-accent);
       }
       .diagram-meta {
         margin: 0;
@@ -875,13 +948,12 @@ function buildMermaidDocument(title: string, source: string): string {
         overflow: hidden;
         margin-top: 22px;
         padding: 22px;
-        border-radius: 22px;
-        background:
-          linear-gradient(180deg, rgba(255, 253, 248, 0.98), rgba(247, 243, 235, 0.96));
-        border: 1px solid rgba(143, 116, 74, 0.18);
+        border-radius: 8px;
+        background: var(--surface-raised);
+        border: 1px solid var(--surface-line);
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.9),
-          0 10px 24px rgba(15, 23, 42, 0.05);
+          inset 0 1px 0 var(--surface-soft-line),
+          0 10px 24px rgba(17, 24, 39, 0.05);
       }
       .diagram-frame__label {
         display: inline-flex;
@@ -889,10 +961,10 @@ function buildMermaidDocument(title: string, source: string): string {
         gap: 8px;
         margin-bottom: 16px;
         padding: 6px 10px;
-        border-radius: 999px;
-        background: rgba(15, 59, 83, 0.08);
-        border: 1px solid rgba(15, 59, 83, 0.1);
-        color: #0f3b53;
+        border-radius: 8px;
+        background: var(--surface-accent-soft);
+        border: 1px solid var(--surface-soft-line);
+        color: var(--surface-accent);
         font-size: 0.78rem;
         font-weight: 600;
         letter-spacing: 0.02em;
@@ -914,23 +986,23 @@ function buildMermaidDocument(title: string, source: string): string {
         min-width: 40px;
         height: 34px;
         padding: 0 12px;
-        border: 1px solid rgba(15, 59, 83, 0.18);
+        border: 1px solid var(--surface-line);
         border-radius: 8px;
-        background: rgba(255, 255, 255, 0.82);
-        color: #0f3b53;
+        background: var(--surface-canvas);
+        color: var(--surface-ink);
         font: inherit;
         font-size: 0.84rem;
         font-weight: 700;
         line-height: 1;
         cursor: pointer;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+        box-shadow: 0 1px 2px rgba(17, 24, 39, 0.06);
       }
       .diagram-toolbar button:hover {
-        background: #ffffff;
-        border-color: rgba(15, 59, 83, 0.34);
+        background: var(--surface-raised);
+        border-color: var(--surface-accent);
       }
       .diagram-toolbar button:focus-visible {
-        outline: 3px solid rgba(15, 76, 129, 0.24);
+        outline: 3px solid var(--surface-accent-soft);
         outline-offset: 2px;
       }
       .diagram-viewport {
@@ -938,12 +1010,12 @@ function buildMermaidDocument(title: string, source: string): string {
         height: clamp(420px, 64vh, 760px);
         min-height: 360px;
         overflow: hidden;
-        border: 1px solid rgba(15, 59, 83, 0.12);
-        border-radius: 16px;
+        border: 1px solid var(--surface-line);
+        border-radius: 8px;
         background:
-          linear-gradient(rgba(15, 59, 83, 0.04) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(15, 59, 83, 0.04) 1px, transparent 1px),
-          rgba(255, 255, 255, 0.58);
+          linear-gradient(var(--surface-soft-line) 1px, transparent 1px),
+          linear-gradient(90deg, var(--surface-soft-line) 1px, transparent 1px),
+          var(--surface-canvas);
         background-size: 28px 28px;
         cursor: grab;
         touch-action: none;
@@ -966,14 +1038,14 @@ function buildMermaidDocument(title: string, source: string): string {
       }
       .diagram-error {
         margin: 0;
-        color: #991b1b;
+        color: var(--surface-danger);
         font-weight: 600;
       }
       .diagram-source {
         margin-top: 18px;
         border: 1px solid var(--surface-soft-line);
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.56);
+        border-radius: 8px;
+        background: var(--surface-canvas);
       }
       .diagram-source summary {
         cursor: pointer;
@@ -997,8 +1069,8 @@ function buildMermaidDocument(title: string, source: string): string {
         margin: 0;
         border: 0;
         border-top: 1px solid var(--surface-soft-line);
-        border-radius: 0 0 18px 18px;
-        background: rgba(15, 23, 42, 0.045);
+        border-radius: 0 0 8px 8px;
+        background: var(--surface-raised);
       }
     </style>`
   );

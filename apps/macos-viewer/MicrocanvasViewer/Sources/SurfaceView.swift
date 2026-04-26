@@ -3,6 +3,56 @@ import WebKit
 import PDFKit
 import AppKit
 
+enum SurfaceWorkbenchChrome {
+    static let background = NSColor(
+        srgbRed: 246.0 / 255.0,
+        green: 247.0 / 255.0,
+        blue: 249.0 / 255.0,
+        alpha: 1
+    )
+    static let canvas = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+    static let raised = NSColor(
+        srgbRed: 249.0 / 255.0,
+        green: 250.0 / 255.0,
+        blue: 251.0 / 255.0,
+        alpha: 1
+    )
+    static let ink = NSColor(
+        srgbRed: 17.0 / 255.0,
+        green: 24.0 / 255.0,
+        blue: 39.0 / 255.0,
+        alpha: 1
+    )
+    static let muted = NSColor(
+        srgbRed: 91.0 / 255.0,
+        green: 100.0 / 255.0,
+        blue: 114.0 / 255.0,
+        alpha: 1
+    )
+    static let line = ink.withAlphaComponent(0.14)
+    static let softLine = ink.withAlphaComponent(0.08)
+    static let accent = NSColor(
+        srgbRed: 37.0 / 255.0,
+        green: 99.0 / 255.0,
+        blue: 235.0 / 255.0,
+        alpha: 1
+    )
+
+    static let frameCornerRadius: CGFloat = 8
+    static let fallbackCornerRadius: CGFloat = 8
+    static let imagePadding: CGFloat = 28
+    static let surfaceInset: CGFloat = 48
+    static let imageMaxWidth: CGFloat = 960
+    static let frameShadowOpacity: Double = 0.10
+    static let frameShadowRadius: CGFloat = 20
+    static let frameShadowYOffset: CGFloat = 10
+
+    @MainActor
+    static func apply(to pdfView: PDFView) {
+        pdfView.backgroundColor = background
+    }
+}
+
 struct SurfaceView: View {
     @EnvironmentObject private var model: ViewerModel
 
@@ -251,12 +301,13 @@ struct PDFSurfaceView: NSViewRepresentable {
     func makeNSView(context: Context) -> PDFView {
         let view = PDFView()
         view.autoScales = true
-        view.backgroundColor = .windowBackgroundColor
+        SurfaceWorkbenchChrome.apply(to: view)
         onPresentedSurfaceViewChanged(view, surfaceId, revision)
         return view
     }
 
     func updateNSView(_ nsView: PDFView, context: Context) {
+        SurfaceWorkbenchChrome.apply(to: nsView)
         nsView.document = PDFDocument(url: url)
         onPresentedSurfaceViewChanged(nsView, surfaceId, revision)
     }
@@ -289,34 +340,34 @@ struct ImageSurfaceBody: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(nsColor: .windowBackgroundColor),
-                        Color(nsColor: .controlBackgroundColor)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                Color(nsColor: SurfaceWorkbenchChrome.background)
                 .ignoresSafeArea()
 
                 if let image = NSImage(contentsOf: url) {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(Color.white.opacity(0.72))
+                    RoundedRectangle(cornerRadius: SurfaceWorkbenchChrome.frameCornerRadius, style: .continuous)
+                        .fill(Color(nsColor: SurfaceWorkbenchChrome.canvas))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: SurfaceWorkbenchChrome.frameCornerRadius, style: .continuous)
+                                .stroke(Color(nsColor: SurfaceWorkbenchChrome.line), lineWidth: 1)
                         )
-                        .shadow(color: Color.black.opacity(0.08), radius: 28, y: 12)
+                        .shadow(
+                            color: Color.black.opacity(SurfaceWorkbenchChrome.frameShadowOpacity),
+                            radius: SurfaceWorkbenchChrome.frameShadowRadius,
+                            y: SurfaceWorkbenchChrome.frameShadowYOffset
+                        )
                         .overlay {
                             Image(nsImage: image)
                                 .resizable()
                                 .interpolation(.high)
                                 .aspectRatio(contentMode: .fit)
-                                .padding(28)
+                                .padding(SurfaceWorkbenchChrome.imagePadding)
                         }
                         .frame(
-                            maxWidth: min(geometry.size.width - 48, 960),
-                            maxHeight: geometry.size.height - 48
+                            maxWidth: min(
+                                max(geometry.size.width - SurfaceWorkbenchChrome.surfaceInset, 0),
+                                SurfaceWorkbenchChrome.imageMaxWidth
+                            ),
+                            maxHeight: max(geometry.size.height - SurfaceWorkbenchChrome.surfaceInset, 0)
                         )
                 } else {
                     ViewerFallbackCard(
@@ -353,26 +404,38 @@ private struct ViewerFallbackCard: View {
     let detail: String
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: symbolName)
-                .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(.secondary)
-            Text(title)
-                .font(.headline)
-            Text(message)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
+        ZStack {
+            Color(nsColor: SurfaceWorkbenchChrome.background)
+                .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                Image(systemName: symbolName)
+                    .font(.system(size: 30, weight: .medium))
+                    .foregroundStyle(Color(nsColor: SurfaceWorkbenchChrome.accent))
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(Color(nsColor: SurfaceWorkbenchChrome.ink))
+                Text(message)
+                    .font(.body)
+                    .foregroundStyle(Color(nsColor: SurfaceWorkbenchChrome.muted))
+                    .multilineTextAlignment(.center)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(Color(nsColor: SurfaceWorkbenchChrome.muted).opacity(0.78))
+                    .multilineTextAlignment(.center)
+            }
+            .padding(28)
+            .background(
+                RoundedRectangle(cornerRadius: SurfaceWorkbenchChrome.fallbackCornerRadius, style: .continuous)
+                    .fill(Color(nsColor: SurfaceWorkbenchChrome.raised))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: SurfaceWorkbenchChrome.fallbackCornerRadius, style: .continuous)
+                            .stroke(Color(nsColor: SurfaceWorkbenchChrome.softLine), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.06), radius: 16, y: 8)
+            )
+            .padding(24)
         }
-        .padding(28)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
